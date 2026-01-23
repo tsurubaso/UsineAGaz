@@ -1,0 +1,19 @@
+# Dépendances (le dossier pèse très lourd, npm install le recréera)
+node_modules/
+
+# Logs (pour le debug)
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environnement (où tu stockeras plus tard tes clés privées d'Admin)
+.env
+.env.local
+
+# Données de la Blockchain (chaque nœud doit avoir son propre registre local)
+*.json
+!package.json
+!package-lock.json
+
+# Docker
+.docker/
