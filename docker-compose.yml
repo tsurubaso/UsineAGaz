@@ -1,0 +1,36 @@
+
+
+services:
+  node1:
+    build: .
+    container_name: buyabuya-node1
+    environment:
+      - PRIVATE_KEY=${NODE1_PRIVATE_KEY}
+      - PUBLIC_KEY=${NODE1_PUBLIC_KEY}
+      - NODE_ID=node1
+    networks:
+      - blockchain-net
+
+  node2:
+    build: .
+    container_name: buyabuya-node2
+    environment:
+      - PRIVATE_KEY=${NODE2_PRIVATE_KEY}
+      - PUBLIC_KEY=${NODE2_PUBLIC_KEY}
+      - NODE_ID=node2
+    networks:
+      - blockchain-net
+
+  node3:
+    build: .
+    container_name: buyabuya-node3
+    environment:
+      - PRIVATE_KEY=${NODE3_PRIVATE_KEY}
+      - PUBLIC_KEY=${NODE3_PUBLIC_KEY}
+      - NODE_ID=node3
+    networks:
+      - blockchain-net
+
+networks:
+  blockchain-net:
+    driver: bridge

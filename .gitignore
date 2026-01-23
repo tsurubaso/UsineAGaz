@@ -7,8 +7,8 @@ yarn-debug.log*
 yarn-error.log*
 
 # Environnement (où tu stockeras plus tard tes clés privées d'Admin)
-.env
-.env.local
+.env*
+
 
 # Données de la Blockchain (chaque nœud doit avoir son propre registre local)
 *.json
@@ -17,3 +17,6 @@ yarn-error.log*
 
 # Docker
 .docker/
+
+#Pour training
+erase.js
