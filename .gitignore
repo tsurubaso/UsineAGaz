@@ -19,4 +19,4 @@ yarn-error.log*
 .docker/
 
 #Pour training
-erase.js
+eraseme.js
