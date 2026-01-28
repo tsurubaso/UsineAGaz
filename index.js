@@ -1,202 +1,243 @@
-import crypto from 'crypto';
+import crypto from "crypto";
 import net from "net";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { hexToBytes } from "@noble/hashes/utils.js";
 
 /*
 ────────────────────────────────────────
-1. ÉTAT LOCAL DU NŒUD
+0. CONFIGURATION DU NŒUD
 ────────────────────────────────────────
-Chaque conteneur / nœud possède sa propre
-copie locale de la blockchain.
-Ici, on commence avec une chaîne vide.
+*/
+const nodeID = process.env.NODE_ID;
+
+const privateKey = process.env.NODE1_PRIVATE_KEY;
+const publicKey = process.env.NODE1_PUBLIC_KEY;
+
+console.log(`--- DÉMARRAGE DU NOEUD ${nodeID} ---`);
+
+/*
+────────────────────────────────────────
+1. ÉTAT LOCAL
+────────────────────────────────────────
+Chaque nœud possède sa copie locale
+de la blockchain.
 */
 let blockchain = [];
 
 /*
-Chaque nœud reçoit son identité et sa clé
-publique via des variables d’environnement
-(Docker / docker-compose).
+────────────────────────────────────────
+2. FONCTIONS CRYPTOGRAPHIQUES
+────────────────────────────────────────
+Ces fonctions ne dépendent PAS du réseau.
 */
-const nodeID = process.env.NODE_ID;
-
-//const publicKey = process.env.PUBLIC_KEY;
-
-console.log(`--- DÉMARRAGE DU NOEUD ${nodeID} ---`);
-// console.log(`Mon adresse publique est : ${publicKey}`);
-
 
 /*
 ────────────────────────────────────────
-2. SERVEUR TCP DU NŒUD
+HASH STRUCTUREL DU BLOC (lisible)
 ────────────────────────────────────────
-On crée un serveur TCP pour que les autres
-nœuds puissent nous envoyer des messages.
-Sans ça, le container s’arrêterait immédiatement.
+→ utilisé pour chaîner les blocs
+→ stocké dans la blockchain
+→ format HEX volontairement
 */
-const server = net.createServer((socket) => {
-
-  // À chaque message reçu sur la socket
-  socket.on('data', (data) => {
-
-    // Les messages sont envoyés en JSON
-    const msg = JSON.parse(data.toString());
-
-    /*
-    Message de vérification du Genesis Block :
-    chaque nœud compare le hash reçu avec
-    le hash de SON propre bloc genesis.
-    */
-    if (msg.type === "CHECK_GENESIS") {
-        const isSame = msg.block.hash === blockchain[0].hash;
-
-        console.log(
-          `[${nodeID}] Comparaison Genesis avec ${msg.from} : ${
-            isSame ? "✅ IDENTIQUE" : "❌ ERREUR"
-          }`
-        );
-    }
-  });
-});
-
+function calculateHash(index, previousHash, timestamp, data) {
+  return crypto
+    .createHash("sha256")
+    .update(index + previousHash + timestamp + JSON.stringify(data))
+    .digest("hex");
+}
 
 /*
 ────────────────────────────────────────
-3. LISTE DES PAIRS (PEERS)
+HASH CRYPTO POUR SIGNATURE
 ────────────────────────────────────────
-On définit la liste des nœuds connus,
-en retirant notre propre ID pour éviter
-de s’envoyer des messages à soi-même.
+→ noble exige Uint8Array
+→ JAMAIS de string ici
 */
-const peers = ["node1", "node2", "node3"].filter(
-  (id) => id !== process.env.NODE_ID,
+function hashBlockForSignature(block) {
+  return crypto
+    .createHash("sha256")
+    .update(
+      block.index +
+        block.previousHash +
+        block.timestamp +
+        JSON.stringify(block.data),
+    )
+    .digest(); // Buffer == Uint8Array ✅
+}
+
+/*
+────────────────────────────────────────
+SIGNATURE DU BLOC (MASTER)
+────────────────────────────────────────
+→ privateKeyHex DOIT être convertie
+→ message = Uint8Array
+→ clé = Uint8Array
+*/
+function signBlock(block, privateKeyHex) {
+  const msgHash = hashBlockForSignature(block);
+  const privateKeyBytes = hexToBytes(privateKeyHex);
+
+  const signatureBytes = secp256k1.sign(msgHash, privateKeyBytes);
+
+  // Uint8Array → hex string
+  return Buffer.from(signatureBytes).toString("hex");
+}
+
+/*
+────────────────────────────────────────
+VÉRIFICATION DE LA SIGNATURE
+────────────────────────────────────────
+→ signature = hex
+→ signer = clé publique hex
+*/
+
+function verifyBlockSignature(block) {
+  if (!block.signature || !block.signer) return false;
+
+  const msgHash = hashBlockForSignature(block);
+
+  try {
+return secp256k1.verify(
+  block.signature, // hex
+  msgHash,         // Uint8Array
+  block.signer     // hex
 );
+
+  } catch {
+    return false;
+  }
+}
+
+/*
+────────────────────────────────────────
+3. BLOC GENESIS
+────────────────────────────────────────
+Bloc racine, identique sur tous les nœuds.
+*/
+function createGenesisBlock() {
+  const timestamp = "2024-01-01";
+  const data = { message: "Genesis Block - Naissance de la Buyabuya" };
+
+  const hash = calculateHash(0, "0", timestamp, data);
+
+  return {
+    index: 0,
+    previousHash: "0",
+    timestamp,
+    data,
+    hash,
+  };
+}
+
+/*
+────────────────────────────────────────
+4. INITIALISATION DE LA BLOCKCHAIN
+────────────────────────────────────────
+*/
+const genesis = createGenesisBlock();
+
+// Seul le MASTER signe le bloc Genesis
+if (nodeID === "node1") {
+  genesis.signature = signBlock(genesis, privateKey);
+  genesis.signer = publicKey;
+}
+
+blockchain.push(genesis);
+
+console.log(
+  `[${nodeID}] Bloc Genesis créé : ${genesis.hash.substring(0, 10)}...`,
+);
+
+/*
+────────────────────────────────────────
+5. RÉSEAU : PEERS & ENVOI
+────────────────────────────────────────
+*/
+const peers = ["node1", "node2", "node3"].filter((id) => id !== nodeID);
 
 console.log(`[${nodeID}] Peers connus : ${peers.join(", ")}`);
 
-
-/*
-────────────────────────────────────────
-4. ENVOI DE MESSAGE À UN AUTRE NŒUD
-────────────────────────────────────────
-Fonction utilitaire pour ouvrir une
-connexion TCP, envoyer un message,
-puis fermer la connexion.
-*/
 function sendMessage(targetNode, message) {
+  const client = net.createConnection({ host: targetNode, port: 5000 }, () => {
+    console.log(`[${nodeID}] Connecté à ${targetNode}`);
+    client.write(JSON.stringify(message));
+    client.end();
+  });
 
-  const client = net.createConnection(
-    { host: targetNode, port: 5000 },
-    () => {
-      console.log(`[${nodeID}] Connecté à ${targetNode}`);
-
-      // Envoi du message sous forme JSON
-      client.write(JSON.stringify(message));
-
-      // On ferme la connexion après l’envoi
-      client.end();
-    }
-  );
-
-  /*
-  Les erreurs sont normales au démarrage :
-  les autres conteneurs ne sont pas
-  forcément encore prêts.
-  */
   client.on("error", () => {
     console.log(`[${nodeID}] Impossible de joindre ${targetNode}`);
   });
 }
 
-
 /*
 ────────────────────────────────────────
-5. CALCUL DU HASH D’UN BLOC
+6. SERVEUR TCP
 ────────────────────────────────────────
-Le hash dépend :
-- de l’index
-- du hash précédent
-- du timestamp
-- des données
-Toute modification casse le hash.
+Réception et validation des messages.
 */
-function calculateHash(index, previousHash, timestamp, data) {
-    return crypto
-        .createHash('sha256')
-        .update(index + previousHash + timestamp + JSON.stringify(data))
-        .digest('hex');
-}
+const server = net.createServer((socket) => {
+  socket.on("data", (data) => {
+    let msg;
+    try {
+      msg = JSON.parse(data.toString());
+    } catch {
+      console.log(`[${nodeID}] ❌ Message invalide`);
+      return;
+    }
 
+    // Réception d’un bloc
+    if (msg.type === "NEW_BLOCK") {
+      const block = msg.block;
 
-/*
-────────────────────────────────────────
-6. CRÉATION DU BLOC GENESIS
-────────────────────────────────────────
-Bloc spécial (#0), identique sur tous
-les nœuds :
-- date fixe
-- données fixes
-=> hash identique partout
-*/
-function createGenesisBlock() {
+      // 1. Vérification du hash structurel
+      const recomputedHash = calculateHash(
+        block.index,
+        block.previousHash,
+        block.timestamp,
+        block.data,
+      );
 
-    const timestamp = "2024-01-01"; // DOIT être strictement identique
-    const data = { message: "Genesis Block - Naissance de la Buyabuya" };
+      if (recomputedHash !== block.hash) {
+        console.log(`[${nodeID}] ❌ Hash invalide — bloc altéré`);
+        return;
+      }
 
-    const hash = calculateHash(0, "0", timestamp, data);
+      // 2. Vérification de la signature
+      const isValid = verifyBlockSignature(block);
 
-    return {
-      index: 0,
-      previousHash: "0",
-      timestamp,
-      data,
-      hash
-    };
-}
+      if (!isValid) {
+        console.log(`[${nodeID}] ❌ Bloc rejeté (signature invalide)`);
+        return;
+      }
 
-
-/*
-────────────────────────────────────────
-7. INITIALISATION DE LA BLOCKCHAIN
-────────────────────────────────────────
-Chaque nœud commence avec exactement
-le même bloc genesis.
-*/
-blockchain.push(createGenesisBlock());
-
-console.log(
-  `[${nodeID}] Bloc Genesis créé : ${blockchain[0].hash.substring(0, 10)}...`
-);
-
+      console.log(`[${nodeID}] ✅ Bloc valide reçu de ${msg.from}`);
+    }
+  });
+});
 
 /*
 ────────────────────────────────────────
-8. DÉMARRAGE DU SERVEUR TCP
+7. DÉMARRAGE DU SERVEUR
 ────────────────────────────────────────
-Le serveur doit être hors de toute
-condition pour être actif sur tous
-les nœuds.
 */
 server.listen(5000, () => {
-    console.log(`[${nodeID}] Serveur d'écoute actif.`);
+  console.log(`[${nodeID}] Serveur d'écoute actif.`);
 
-    /*
-    Seul le nœud maître (MASTER_NODE)
-    envoie le bloc genesis aux autres
-    après un délai (le temps qu’ils démarrent).
-    */
-    if (nodeID === "node1") {
+  if (nodeID === "node1" && !privateKey) {
+    throw new Error("MASTER sans clé privée");
+  }
 
-        setTimeout(() => {
-
-            peers.forEach(peer => {
-                console.log(`[${nodeID}] Tentative d'envoi vers ${peer}...`);
-
-                sendMessage(peer, {
-                  type: "NEW_BLOCK",
-                  from: nodeID,
-                  block: blockchain[0]
-                });
-            });
-
-        }, 10000);
-    }
+  // Le MASTER diffuse le Genesis
+  if (nodeID === "node1") {
+    setTimeout(() => {
+      peers.forEach((peer) => {
+        console.log(`[${nodeID}] Envoi du Genesis à ${peer}`);
+        sendMessage(peer, {
+          type: "NEW_BLOCK",
+          from: nodeID,
+          block: genesis,
+        });
+      });
+    }, 3000);
+  }
 });

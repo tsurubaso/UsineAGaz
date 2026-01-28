@@ -6,6 +6,8 @@ services:
       - NODE_ID=${node_id1}
       - PRIVATE_KEY=${NODE1_PRIVATE_KEY}
       - PUBLIC_KEY=${NODE1_PUBLIC_KEY}
+    env_file:
+      - .env
 
 
   node2:
@@ -14,6 +16,8 @@ services:
       - NODE_ID=${node_id2}
       - PRIVATE_KEY=${NODE2_PRIVATE_KEY}
       - PUBLIC_KEY=${NODE2_PUBLIC_KEY}
+    env_file:
+      - .env
 
 
   node3:
@@ -22,3 +26,5 @@ services:
       - NODE_ID=${node_id3}
       - PRIVATE_KEY=${NODE3_PRIVATE_KEY}
       - PUBLIC_KEY=${NODE3_PUBLIC_KEY}
+    env_file:
+      - .env
