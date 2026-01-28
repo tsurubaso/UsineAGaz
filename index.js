@@ -97,16 +97,16 @@ function verifyBlockSignature(block) {
   const msgHash = hashBlockForSignature(block);
 
   try {
-return secp256k1.verify(
-  block.signature, // hex
-  msgHash,         // Uint8Array
-  block.signer     // hex
-);
-
+    return secp256k1.verify(
+      hexToBytes(block.signature), // ✅ Uint8Array
+      msgHash,                     // ✅ Uint8Array
+      hexToBytes(block.signer)     // ✅ Uint8Array
+    );
   } catch {
     return false;
   }
 }
+
 
 /*
 ────────────────────────────────────────
