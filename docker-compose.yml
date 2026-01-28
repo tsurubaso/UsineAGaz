@@ -1,4 +1,5 @@
 services:
+
   node1:
     build: .
     environment:
@@ -6,12 +7,14 @@ services:
       - PRIVATE_KEY=${NODE1_PRIVATE_KEY}
       - PUBLIC_KEY=${NODE1_PUBLIC_KEY}
 
+
   node2:
     build: .
     environment:
       - NODE_ID=${node_id2}
       - PRIVATE_KEY=${NODE2_PRIVATE_KEY}
       - PUBLIC_KEY=${NODE2_PUBLIC_KEY}
+
 
   node3:
     build: .

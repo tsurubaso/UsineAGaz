@@ -16,3 +16,11 @@ git clean -fd
 Remove-Item -Recurse -Force node_modules
 Remove-Item -Recurse -Force .next
 ```
+
+
+```bash
+git reset --hard HEAD~1
+
+git push origin main --force
+
+```
