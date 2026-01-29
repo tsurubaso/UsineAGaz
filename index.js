@@ -4,42 +4,46 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
 
 /*
-────────────────────────────────────────
+════════════════════════════════════════
 0. CONFIGURATION DU NŒUD
-────────────────────────────────────────
+════════════════════════════════════════
+Chaque conteneur définit NODE_ID
+(node1 = master / node2, node3 = followers)
 */
-const nodeID = process.env.NODE_ID;
 
+const nodeID = process.env.NODE_ID;
 const privateKey = process.env.NODE1_PRIVATE_KEY;
 const publicKey = process.env.NODE1_PUBLIC_KEY;
 
-console.log(`--- DÉMARRAGE DU NOEUD ${nodeID} ---`);
+// Liste statique de peers (simplifié volontairement)
+const peers = ["node1", "node2", "node3"].filter((id) => id !== nodeID);
+
+console.log(`\n--- DÉMARRAGE DU NŒUD ${nodeID} ---`);
 
 /*
-────────────────────────────────────────
+════════════════════════════════════════
 1. ÉTAT LOCAL
-────────────────────────────────────────
+════════════════════════════════════════
 Chaque nœud possède sa copie locale
 de la blockchain.
 */
+
 let blockchain = [];
+
+// Tant que la synchro initiale n’est pas finie,
+// on refuse tout nouveau bloc
 let isSyncing = true;
 
 /*
-────────────────────────────────────────
-2. FONCTIONS CRYPTOGRAPHIQUES
-────────────────────────────────────────
-Ces fonctions ne dépendent PAS du réseau.
+════════════════════════════════════════
+2. CRYPTOGRAPHIE
+════════════════════════════════════════
+Séparation volontaire :
+- hash structurel (lisible, hex)
+- hash cryptographique (signature, Uint8Array)
 */
 
-/*
-────────────────────────────────────────
-HASH STRUCTUREL DU BLOC (lisible)
-────────────────────────────────────────
-→ utilisé pour chaîner les blocs
-→ stocké dans la blockchain
-→ format HEX volontairement
-*/
+// Hash stocké dans la blockchain (chaînage)
 function calculateHash(index, previousHash, timestamp, data) {
   return crypto
     .createHash("sha256")
@@ -47,13 +51,8 @@ function calculateHash(index, previousHash, timestamp, data) {
     .digest("hex");
 }
 
-/*
-────────────────────────────────────────
-HASH CRYPTO POUR SIGNATURE
-────────────────────────────────────────
-→ noble exige Uint8Array
-→ JAMAIS de string ici
-*/
+// Hash utilisé UNIQUEMENT pour la signature
+// noble exige un Uint8Array
 function hashBlockForSignature(block) {
   return crypto
     .createHash("sha256")
@@ -63,45 +62,28 @@ function hashBlockForSignature(block) {
         block.timestamp +
         JSON.stringify(block.data),
     )
-    .digest(); // Buffer == Uint8Array ✅
+    .digest(); // Buffer == Uint8Array
 }
 
-/*
-────────────────────────────────────────
-SIGNATURE DU BLOC (MASTER)
-────────────────────────────────────────
-→ privateKeyHex DOIT être convertie
-→ message = Uint8Array
-→ clé = Uint8Array
-*/
+// Signature ECDSA secp256k1 (MASTER seulement)
 function signBlock(block, privateKeyHex) {
   const msgHash = hashBlockForSignature(block);
-  const privateKeyBytes = hexToBytes(privateKeyHex);
+  const keyBytes = hexToBytes(privateKeyHex);
+  const signature = secp256k1.sign(msgHash, keyBytes);
 
-  const signatureBytes = secp256k1.sign(msgHash, privateKeyBytes);
-
-  // Uint8Array → hex string
-  return Buffer.from(signatureBytes).toString("hex");
+  // On stocke la signature en hex (transport / JSON)
+  return Buffer.from(signature).toString("hex");
 }
 
-/*
-────────────────────────────────────────
-VÉRIFICATION DE LA SIGNATURE
-────────────────────────────────────────
-→ signature = hex
-→ signer = clé publique hex
-*/
-
+// Vérification de signature d’un bloc
 function verifyBlockSignature(block) {
   if (!block.signature || !block.signer) return false;
 
-  const msgHash = hashBlockForSignature(block);
-
   try {
     return secp256k1.verify(
-      hexToBytes(block.signature), // ✅ Uint8Array
-      msgHash, // ✅ Uint8Array
-      hexToBytes(block.signer), // ✅ Uint8Array
+      hexToBytes(block.signature),
+      hashBlockForSignature(block),
+      hexToBytes(block.signer),
     );
   } catch {
     return false;
@@ -109,280 +91,213 @@ function verifyBlockSignature(block) {
 }
 
 /*
-────────────────────────────────────────
-3. BLOC GENESIS
-────────────────────────────────────────
-Bloc racine, identique sur tous les nœuds.
+════════════════════════════════════════
+3. GENESIS BLOCK
+════════════════════════════════════════
+- Identique pour tous
+- Signé UNIQUEMENT par le master
 */
+
 function createGenesisBlock() {
   const timestamp = "2024-01-01";
-  const data = { message: "Genesis Block - Naissance de la Buyabuya" };
-
-  const hash = calculateHash(0, "0", timestamp, data);
+  const data = { message: "Genesis Block - Buyabuya" };
 
   return {
     index: 0,
     previousHash: "0",
     timestamp,
     data,
-    hash,
+    hash: calculateHash(0, "0", timestamp, data),
   };
 }
 
-/*
-────────────────────────────────────────
-4. INITIALISATION DE LA BLOCKCHAIN
-────────────────────────────────────────
-*/
-const genesis = createGenesisBlock();
-
-// Seul le MASTER signe le bloc Genesis
+// Le master crée et signe le Genesis
 if (nodeID === "node1") {
+  const genesis = createGenesisBlock();
   genesis.signature = signBlock(genesis, privateKey);
   genesis.signer = publicKey;
+
+  blockchain.push(genesis);
+  console.log(`[${nodeID}] 🧱 Genesis créé`);
+} else {
+  // Les autres nœuds attendent la synchro réseau
+  console.log(`[${nodeID}] ⏳ En attente de synchronisation`);
 }
 
-blockchain.push(genesis);
+/*
+════════════════════════════════════════
+4. VALIDATION DE CHAÎNE
+════════════════════════════════════════
+Utilisée lors de la synchronisation
+*/
 
-console.log(
-  `[${nodeID}] Bloc Genesis créé : ${genesis.hash.substring(0, 10)}...`,
-);
+function isValidChain(chain) {
+  if (!Array.isArray(chain) || chain.length === 0) return false;
+
+  // Vérification stricte du Genesis
+  const expectedGenesis = createGenesisBlock();
+  const g = chain[0];
+
+  if (
+    g.index !== expectedGenesis.index ||
+    g.previousHash !== expectedGenesis.previousHash ||
+    g.hash !== expectedGenesis.hash
+  ) {
+    return false;
+  }
+
+  // Le Genesis doit être signé correctement
+  if (!verifyBlockSignature(g)) return false;
+
+  // Vérification des blocs suivants
+  for (let i = 1; i < chain.length; i++) {
+    const cur = chain[i];
+    const prev = chain[i - 1];
+
+    if (cur.index !== prev.index + 1) return false;
+    if (cur.previousHash !== prev.hash) return false;
+
+    const hash = calculateHash(
+      cur.index,
+      cur.previousHash,
+      cur.timestamp,
+      cur.data,
+    );
+
+    if (hash !== cur.hash) return false;
+    if (!verifyBlockSignature(cur)) return false;
+  }
+
+  return true;
+}
+
+// Règle simple : chaîne la plus longue gagne
+function chooseBestChain(local, incoming) {
+  if (incoming.length > local.length) return incoming;
+  return local;
+}
 
 /*
-────────────────────────────────────────
-5. RÉSEAU : PEERS & ENVOI
-────────────────────────────────────────
+════════════════════════════════════════
+5. CLIENT TCP
+════════════════════════════════════════
+Utilisé pour envoyer des messages
+et recevoir les réponses
 */
-const peers = ["node1", "node2", "node3"].filter((id) => id !== nodeID);
 
-console.log(`[${nodeID}] Peers connus : ${peers.join(", ")}`);
-
-function sendMessage(targetNode, message) {
-  const client = net.createConnection({ host: targetNode, port: 5000 }, () => {
-    console.log(`[${nodeID}] Connecté à ${targetNode}`);
+function sendMessage(target, message) {
+  const client = net.createConnection({ host: target, port: 5000 }, () => {
     client.write(JSON.stringify(message));
+  });
+
+  client.on("data", (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+      handleMessage(msg);
+    } catch {}
     client.end();
   });
 
-  client.on("error", () => {
-    console.log(`[${nodeID}] Impossible de joindre ${targetNode}`);
-  });
+  client.on("error", () => {});
 }
 
 /*
-────────────────────────────────────────
-6. SERVEUR TCP
-────────────────────────────────────────
-Réception et validation des messages.
+════════════════════════════════════════
+6. ROUTEUR DE MESSAGES
+════════════════════════════════════════
+Toute la logique réseau est centralisée ici
 */
-const server = net.createServer((socket) => {
-  socket.on("data", (data) => {
-    let msg;
-    try {
-      msg = JSON.parse(data.toString());
-    } catch {
-      console.log(`[${nodeID}] ❌ Message invalide`);
-      return;
-    }
-    // Demande de synchronisation
-    if (msg.type === "GET_CHAIN") {
-      console.log(`[${nodeID}] 📤 Envoi de la blockchain à ${msg.from}`);
 
-      socket.write(
+function handleMessage(msg, socket = null) {
+  if (!msg || !msg.type) return;
+
+  switch (msg.type) {
+    // Un peer demande notre blockchain
+    case "GET_CHAIN":
+      if (!blockchain.length) return;
+
+      socket?.write(
         JSON.stringify({
           type: "FULL_CHAIN",
           from: nodeID,
           chain: blockchain,
         }),
       );
-      return;
-    }
-// Pendant la synchro, on ignore UNIQUEMENT les nouveaux blocs
-if (isSyncing && msg.type === "NEW_BLOCK") {
-  console.log(`[${nodeID}] ⏳ Bloc ignoré (sync en cours)`);
-  return;
-}
+      break;
 
+    // Réception d’une blockchain complète
+    case "FULL_CHAIN":
+      console.log(`[${nodeID}] 📥 Chaîne reçue de ${msg.from}`);
 
+      if (!isValidChain(msg.chain)) {
+        console.log(`[${nodeID}] ❌ Chaîne invalide`);
+        return;
+      }
 
-    // Réception d’un bloc
-    if (msg.type === "NEW_BLOCK") {
+      blockchain = chooseBestChain(blockchain, msg.chain);
+      isSyncing = false;
+
+      console.log(`[${nodeID}] 🟢 Synchronisation terminée`);
+      break;
+
+    // Réception d’un nouveau bloc
+    case "NEW_BLOCK": {
+      if (isSyncing) return;
+
       const block = msg.block;
+      const last = blockchain[blockchain.length - 1];
 
-      // 1. Vérification du hash structurel
-      const recomputedHash = calculateHash(
+      if (
+        block.index !== last.index + 1 ||
+        block.previousHash !== last.hash
+      ) return;
+
+      const hash = calculateHash(
         block.index,
         block.previousHash,
         block.timestamp,
         block.data,
       );
 
-      if (recomputedHash !== block.hash) {
-        console.log(`[${nodeID}] ❌ Hash invalide — bloc altéré`);
-        return;
-      }
+      if (hash !== block.hash) return;
+      if (!verifyBlockSignature(block)) return;
 
-      // 2. Vérification de la signature
-      const isValid = verifyBlockSignature(block);
-
-      if (!isValid) {
-        console.log(`[${nodeID}] ❌ Bloc rejeté (signature invalide)`);
-        return;
-      }
-
-      console.log(`[${nodeID}] ✅ Bloc valide reçu de ${msg.from}`);
+      blockchain.push(block);
+      console.log(`[${nodeID}] ➕ Bloc ajouté`);
+      break;
     }
-    // Réception d’une blockchain complète
-    if (msg.type === "FULL_CHAIN") {
-      const incomingChain = msg.chain;
+  }
+}
 
-      console.log(`[${nodeID}] 📥 Chaîne reçue de ${msg.from}`);
+/*
+════════════════════════════════════════
+7. SERVEUR TCP
+════════════════════════════════════════
+*/
 
-      const isValid = isValidChain(incomingChain);
-
-      if (!isValid) {
-        console.log(`[${nodeID}] ❌ Chaîne rejetée (invalide)`);
-        return;
-      }
-
-      console.log(`[${nodeID}] ✅ Chaîne valide acceptée`);
-
-      const chosenChain = chooseBestChain(blockchain, incomingChain);
-
-      if (chosenChain !== blockchain) {
-        console.log(
-          `[${nodeID}] 🔄 Chaîne remplacée par une version plus longue`,
-        );
-        blockchain = chosenChain;
-      } else {
-        console.log(`[${nodeID}] ℹ️ Chaîne locale conservée`);
-      }
-      isSyncing = false;
-      console.log(`[${nodeID}] 🟢 Synchronisation terminée`);
-    }
+const server = net.createServer((socket) => {
+  socket.on("data", (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+      handleMessage(msg, socket);
+    } catch {}
   });
 });
 
 /*
-────────────────────────────────────────
-7. DÉMARRAGE DU SERVEUR
-────────────────────────────────────────
+════════════════════════════════════════
+8. DÉMARRAGE & SYNCHRO INITIALE
+════════════════════════════════════════
 */
+
 server.listen(5000, () => {
-  console.log(`[${nodeID}] Serveur d'écoute actif.`);
+  console.log(`[${nodeID}] 🟢 Serveur actif`);
 
-
-  if (nodeID === "node1" && !privateKey) {
-    throw new Error("MASTER sans clé privée");
-  }
-
-  // Demande de synchronisation au démarrage
+  // Synchronisation au démarrage
   setTimeout(() => {
-    console.log(`[${nodeID}] 🔄 Demande de synchronisation...`);
-
-    peers.forEach((peer) => {
-      sendMessage(peer, {
-        type: "GET_CHAIN",
-        from: nodeID,
-      });
-    });
-  }, 2000);
-
-  // Le MASTER diffuse le Genesis
-  if (nodeID === "node1") {
-    setTimeout(() => {
-      peers.forEach((peer) => {
-        console.log(`[${nodeID}] Envoi du Genesis à ${peer}`);
-        sendMessage(peer, {
-          type: "NEW_BLOCK",
-          from: nodeID,
-          block: genesis,
-        });
-      });
-    }, 3000);
-  }
-});
-
-function isValidChain(chain) {
-  // La chaîne doit au minimum contenir le Genesis
-  if (!Array.isArray(chain) || chain.length === 0) {
-    return false;
-  }
-
-  // ────────────────────────────────────────
-  // 1. Vérification du bloc Genesis
-  // ────────────────────────────────────────
-  const genesis = chain[0];
-  const expectedGenesis = createGenesisBlock();
-
-  if (
-    genesis.index !== expectedGenesis.index ||
-    genesis.previousHash !== expectedGenesis.previousHash ||
-    genesis.timestamp !== expectedGenesis.timestamp ||
-    JSON.stringify(genesis.data) !== JSON.stringify(expectedGenesis.data) ||
-    genesis.hash !== expectedGenesis.hash
-  ) {
-    return false;
-  }
-
-  // Le Genesis doit être signé uniquement par le MASTER
-  if (genesis.signature || genesis.signer) {
-    if (!verifyBlockSignature(genesis)) {
-      return false;
-    }
-  }
-
-  // ────────────────────────────────────────
-  // 2. Vérification des blocs suivants
-  // ────────────────────────────────────────
-  for (let i = 1; i < chain.length; i++) {
-    const current = chain[i];
-    const previous = chain[i - 1];
-
-    // 2.1 index strictement croissant
-    if (current.index !== previous.index + 1) {
-      return false;
-    }
-
-    // 2.2 chaînage correct
-    if (current.previousHash !== previous.hash) {
-      return false;
-    }
-
-    // 2.3 recalcul du hash structurel
-    const recomputedHash = calculateHash(
-      current.index,
-      current.previousHash,
-      current.timestamp,
-      current.data,
+    console.log(`[${nodeID}] 🔄 Sync au démarrage`);
+    peers.forEach((peer) =>
+      sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
     );
-
-    if (recomputedHash !== current.hash) {
-      return false;
-    }
-
-    // 2.4 signature obligatoire et valide
-    if (!current.signature || !current.signer) {
-      return false;
-    }
-
-    if (!verifyBlockSignature(current)) {
-      return false;
-    }
-  }
-
-  // Si tout est passé
-  return true;
-}
-
-function chooseBestChain(localChain, incomingChain) {
-  if (!isValidChain(incomingChain)) {
-    return localChain;
-  }
-
-  if (incomingChain.length > localChain.length) {
-    return incomingChain;
-  }
-
-  return localChain;
-}
+  }, 1500);
+});
