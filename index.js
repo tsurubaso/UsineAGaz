@@ -23,6 +23,7 @@ Chaque nœud possède sa copie locale
 de la blockchain.
 */
 let blockchain = [];
+let isSyncing = true;
 
 /*
 ────────────────────────────────────────
@@ -99,14 +100,13 @@ function verifyBlockSignature(block) {
   try {
     return secp256k1.verify(
       hexToBytes(block.signature), // ✅ Uint8Array
-      msgHash,                     // ✅ Uint8Array
-      hexToBytes(block.signer)     // ✅ Uint8Array
+      msgHash, // ✅ Uint8Array
+      hexToBytes(block.signer), // ✅ Uint8Array
     );
   } catch {
     return false;
   }
 }
-
 
 /*
 ────────────────────────────────────────
@@ -184,6 +184,26 @@ const server = net.createServer((socket) => {
       console.log(`[${nodeID}] ❌ Message invalide`);
       return;
     }
+    // Demande de synchronisation
+    if (msg.type === "GET_CHAIN") {
+      console.log(`[${nodeID}] 📤 Envoi de la blockchain à ${msg.from}`);
+
+      socket.write(
+        JSON.stringify({
+          type: "FULL_CHAIN",
+          from: nodeID,
+          chain: blockchain,
+        }),
+      );
+      return;
+    }
+// Pendant la synchro, on ignore UNIQUEMENT les nouveaux blocs
+if (isSyncing && msg.type === "NEW_BLOCK") {
+  console.log(`[${nodeID}] ⏳ Bloc ignoré (sync en cours)`);
+  return;
+}
+
+
 
     // Réception d’un bloc
     if (msg.type === "NEW_BLOCK") {
@@ -212,6 +232,34 @@ const server = net.createServer((socket) => {
 
       console.log(`[${nodeID}] ✅ Bloc valide reçu de ${msg.from}`);
     }
+    // Réception d’une blockchain complète
+    if (msg.type === "FULL_CHAIN") {
+      const incomingChain = msg.chain;
+
+      console.log(`[${nodeID}] 📥 Chaîne reçue de ${msg.from}`);
+
+      const isValid = isValidChain(incomingChain);
+
+      if (!isValid) {
+        console.log(`[${nodeID}] ❌ Chaîne rejetée (invalide)`);
+        return;
+      }
+
+      console.log(`[${nodeID}] ✅ Chaîne valide acceptée`);
+
+      const chosenChain = chooseBestChain(blockchain, incomingChain);
+
+      if (chosenChain !== blockchain) {
+        console.log(
+          `[${nodeID}] 🔄 Chaîne remplacée par une version plus longue`,
+        );
+        blockchain = chosenChain;
+      } else {
+        console.log(`[${nodeID}] ℹ️ Chaîne locale conservée`);
+      }
+      isSyncing = false;
+      console.log(`[${nodeID}] 🟢 Synchronisation terminée`);
+    }
   });
 });
 
@@ -223,9 +271,22 @@ const server = net.createServer((socket) => {
 server.listen(5000, () => {
   console.log(`[${nodeID}] Serveur d'écoute actif.`);
 
+
   if (nodeID === "node1" && !privateKey) {
     throw new Error("MASTER sans clé privée");
   }
+
+  // Demande de synchronisation au démarrage
+  setTimeout(() => {
+    console.log(`[${nodeID}] 🔄 Demande de synchronisation...`);
+
+    peers.forEach((peer) => {
+      sendMessage(peer, {
+        type: "GET_CHAIN",
+        from: nodeID,
+      });
+    });
+  }, 2000);
 
   // Le MASTER diffuse le Genesis
   if (nodeID === "node1") {
@@ -241,3 +302,87 @@ server.listen(5000, () => {
     }, 3000);
   }
 });
+
+function isValidChain(chain) {
+  // La chaîne doit au minimum contenir le Genesis
+  if (!Array.isArray(chain) || chain.length === 0) {
+    return false;
+  }
+
+  // ────────────────────────────────────────
+  // 1. Vérification du bloc Genesis
+  // ────────────────────────────────────────
+  const genesis = chain[0];
+  const expectedGenesis = createGenesisBlock();
+
+  if (
+    genesis.index !== expectedGenesis.index ||
+    genesis.previousHash !== expectedGenesis.previousHash ||
+    genesis.timestamp !== expectedGenesis.timestamp ||
+    JSON.stringify(genesis.data) !== JSON.stringify(expectedGenesis.data) ||
+    genesis.hash !== expectedGenesis.hash
+  ) {
+    return false;
+  }
+
+  // Le Genesis doit être signé uniquement par le MASTER
+  if (genesis.signature || genesis.signer) {
+    if (!verifyBlockSignature(genesis)) {
+      return false;
+    }
+  }
+
+  // ────────────────────────────────────────
+  // 2. Vérification des blocs suivants
+  // ────────────────────────────────────────
+  for (let i = 1; i < chain.length; i++) {
+    const current = chain[i];
+    const previous = chain[i - 1];
+
+    // 2.1 index strictement croissant
+    if (current.index !== previous.index + 1) {
+      return false;
+    }
+
+    // 2.2 chaînage correct
+    if (current.previousHash !== previous.hash) {
+      return false;
+    }
+
+    // 2.3 recalcul du hash structurel
+    const recomputedHash = calculateHash(
+      current.index,
+      current.previousHash,
+      current.timestamp,
+      current.data,
+    );
+
+    if (recomputedHash !== current.hash) {
+      return false;
+    }
+
+    // 2.4 signature obligatoire et valide
+    if (!current.signature || !current.signer) {
+      return false;
+    }
+
+    if (!verifyBlockSignature(current)) {
+      return false;
+    }
+  }
+
+  // Si tout est passé
+  return true;
+}
+
+function chooseBestChain(localChain, incomingChain) {
+  if (!isValidChain(incomingChain)) {
+    return localChain;
+  }
+
+  if (incomingChain.length > localChain.length) {
+    return incomingChain;
+  }
+
+  return localChain;
+}
