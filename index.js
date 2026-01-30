@@ -30,6 +30,33 @@ de la blockchain.
 
 let blockchain = [];
 
+/*
+════════════════════════════════════════
+A. POOL DE TRANSACTIONS
+════════════════════════════════════════
+
+Chaque nœud maintient un pool de
+transactions en attente d’inclusion
+dans un bloc.
+Chaque nœud:
+-reçoit des transactions
+-les vérifie
+-les stocke temporairement
+
+Nouveau message réseau: "NEW_TX"
+
+client → node → mempool → (plus tard) block
+Message transaction:
+data: {
+  transactions: [...]
+}
+*/
+
+let mempool = [];
+
+
+
+
 // Tant que la synchro initiale n’est pas finie,
 // on refuse tout nouveau bloc
 let isSyncing = true;
@@ -266,6 +293,30 @@ function handleMessage(msg, socket = null) {
       console.log(`[${nodeID}] ➕ Bloc ajouté`);
       break;
     }
+
+    case "NEW_TX": {
+  const tx = msg.tx;
+
+  // Vérifications minimales
+  if (!tx || !tx.signature || !tx.from) return;
+
+  // (plus tard : vérifier signature de la transaction)
+  mempool.push(tx);
+
+  console.log(`[${nodeID}] 💸 Transaction reçue (${mempool.length} en pool)`);
+
+  // Propagation aux autres peers
+  peers.forEach((peer) => {
+    sendMessage(peer, {
+      type: "NEW_TX",
+      from: nodeID,
+      tx,
+    });
+  });
+
+  break;
+}
+
   }
 }
 
