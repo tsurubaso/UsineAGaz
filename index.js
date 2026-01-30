@@ -46,20 +46,165 @@ Chaque nœud:
 Nouveau message réseau: "NEW_TX"
 
 client → node → mempool → (plus tard) block
+
 Message transaction:
-data: {
-  transactions: [...]
+{
+  from: <publicKey>,
+  to: <publicKey>,
+  amount: number,
+  timestamp: string,
+  signature: hex
 }
+
 */
 
 let mempool = [];
 
+/*
+════════════════════════════════════════
+ÉTAT DES SOLDES (LEDGER LOCAL)
+════════════════════════════════════════
+- Dérivé de la blockchain
+- Jamais envoyé sur le réseau
+- Recalculable à tout moment
+*/
+let balances = {};
 
+/*
+Applique une transaction aux soldes
+⚠️ suppose que la transaction est valide
+*/
+function applyTransaction(tx, balances) {
+  balances[tx.from] = (balances[tx.from] || 0) - tx.amount;
+  balances[tx.to] = (balances[tx.to] || 0) + tx.amount;
+}
 
+/*
+Vérifie que l’émetteur a assez de solde
+(ne touche pas aux signatures)
+*/
+function isTransactionEconomicallyValid(tx, balances) {
+  return (balances[tx.from] || 0) >= tx.amount;
+}
 
 // Tant que la synchro initiale n’est pas finie,
 // on refuse tout nouveau bloc
 let isSyncing = true;
+
+/*
+════════════════════════════════════════
+B. Transactions (exemple simplifié)
+════════════════════════════════════════
+*/
+
+function hashTransaction(tx) {
+  return crypto
+    .createHash("sha256")
+    .update(tx.from + tx.to + tx.amount + tx.timestamp)
+    .digest(); // Uint8Array
+}
+
+function verifyTransaction(tx) {
+  if (!tx.signature || !tx.from) return false;
+
+  try {
+    return secp256k1.verify(
+      hexToBytes(tx.signature),
+      hashTransaction(tx),
+      hexToBytes(tx.from),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/*
+════════════════════════════════════════
+C. FORGE D’UN BLOC (MASTER UNIQUEMENT)
+════════════════════════════════════════
+Le master :
+- prend des transactions du mempool
+- crée un bloc
+- le signe
+*/
+
+function forgeBlock() {
+  // Sécurité : seul le master forge
+  if (nodeID !== "node1") return;
+
+  // Pas de transactions → pas de bloc
+  if (mempool.length === 0) {
+    console.log(`[${nodeID}] ⏸️ Mempool vide, rien à forger`);
+    return;
+  }
+
+  const lastBlock = blockchain[blockchain.length - 1];
+
+  // On prend TOUT le mempool (simple et volontaire)
+  const transactions = [...mempool];
+
+  const block = {
+    index: lastBlock.index + 1,
+    previousHash: lastBlock.hash,
+    timestamp: Date.now(),
+    data: {
+      transactions,
+    },
+  };
+
+  // Hash structurel
+  block.hash = calculateHash(
+    block.index,
+    block.previousHash,
+    block.timestamp,
+    block.data,
+  );
+
+  // Signature par le master
+  block.signature = signBlock(block, privateKey);
+  block.signer = publicKey;
+
+  // Ajout local
+  blockchain.push(block);
+
+  // Application des transactions du bloc aux soldes
+  for (const tx of block.data.transactions) {
+    applyTransaction(tx, balances);
+  }
+
+  // On vide le mempool
+  mempool = [];
+
+  console.log(
+    `[${nodeID}] ⛏️ Bloc forgé (#${block.index}, ${transactions.length} tx)`,
+  );
+
+  // Diffusion aux peers
+  peers.forEach((peer) =>
+    sendMessage(peer, {
+      type: "NEW_BLOCK",
+      from: nodeID,
+      block,
+    }),
+  );
+}
+// Forge un bloc toutes les 20 secondes
+
+/*
+════════════════════════════════════════
+D. IDENTIFIANT DE TRANSACTION
+════════════════════════════════════════
+- Déterministe
+- Identique sur tous les nœuds
+- Sert de clé logique dans le mempool
+*/
+
+function createTransactionId(tx) {
+  return crypto
+    .createHash("sha256")
+    .update(tx.from + tx.to + tx.amount + tx.timestamp)
+    .digest("hex");
+}
 
 /*
 ════════════════════════════════════════
@@ -105,6 +250,8 @@ function signBlock(block, privateKeyHex) {
 // Vérification de signature d’un bloc
 function verifyBlockSignature(block) {
   if (!block.signature || !block.signer) return false;
+  // Seul le master est autorisé à signer des blocs
+  if (block.signer !== process.env.NODE1_PUBLIC_KEY) return false;
 
   try {
     return secp256k1.verify(
@@ -274,10 +421,8 @@ function handleMessage(msg, socket = null) {
       const block = msg.block;
       const last = blockchain[blockchain.length - 1];
 
-      if (
-        block.index !== last.index + 1 ||
-        block.previousHash !== last.hash
-      ) return;
+      if (block.index !== last.index + 1 || block.previousHash !== last.hash)
+        return;
 
       const hash = calculateHash(
         block.index,
@@ -289,34 +434,62 @@ function handleMessage(msg, socket = null) {
       if (hash !== block.hash) return;
       if (!verifyBlockSignature(block)) return;
 
+      // NOTE: plus tard, il faudra retirer du mempool
+      // les transactions incluses dans ce bloc
+
       blockchain.push(block);
+
+      // Application des transactions du bloc aux soldes
+      for (const tx of block.data.transactions) {
+        applyTransaction(tx, balances);
+      }
+
       console.log(`[${nodeID}] ➕ Bloc ajouté`);
       break;
     }
 
+    // Réception d’une nouvelle transaction
+
     case "NEW_TX": {
-  const tx = msg.tx;
+      const tx = msg.tx;
 
-  // Vérifications minimales
-  if (!tx || !tx.signature || !tx.from) return;
+      // 1. Vérification cryptographique
+      if (!verifyTransaction(tx)) {
+        console.log(`[${nodeID}] ❌ Transaction invalide`);
+        return;
+      }
 
-  // (plus tard : vérifier signature de la transaction)
-  mempool.push(tx);
+      // Vérification économique
+      if (!isTransactionEconomicallyValid(tx, balances)) {
+        console.log(`[${nodeID}] ❌ Solde insuffisant pour la transaction`);
+        return;
+      }
 
-  console.log(`[${nodeID}] 💸 Transaction reçue (${mempool.length} en pool)`);
+      // 2. Création de l’identifiant canonique
+      if (!tx.id) {
+        tx.id = createTransactionId(tx);
+      }
 
-  // Propagation aux autres peers
-  peers.forEach((peer) => {
-    sendMessage(peer, {
-      type: "NEW_TX",
-      from: nodeID,
-      tx,
-    });
-  });
+      // 3. Anti-doublon (par ID uniquement)
+      if (mempool.find((t) => t.id === tx.id)) {
+        return;
+      }
 
-  break;
-}
+      // 4. Ajout au mempool
+      mempool.push(tx);
+      console.log(`[${nodeID}] 💸 Transaction acceptée (${mempool.length})`);
 
+      // 5. Propagation réseau
+      peers.forEach((peer) =>
+        sendMessage(peer, {
+          type: "NEW_TX",
+          from: nodeID,
+          tx,
+        }),
+      );
+
+      break;
+    }
   }
 }
 
@@ -351,4 +524,12 @@ server.listen(5000, () => {
       sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
     );
   }, 1500);
+
+  // Le master forge un bloc toutes les 20 secondes
+
+  if (nodeID === "node1") {
+    setInterval(() => {
+      forgeBlock();
+    }, 20000); // toutes les 20 secondes
+  }
 });
