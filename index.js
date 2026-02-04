@@ -71,6 +71,33 @@ let mempool = [];
 let balances = {};
 
 /*
+════════════════════════════════════════
+ÉTAT DES SERVICES (ENGAGEMENTS)
+════════════════════════════════════════
+Un service est un accord social :
+- un demandeur
+- un prestataire
+- un paiement en deux temps
+*/
+
+let services = {};
+
+/*
+Structure d’un service :
+
+services[serviceId] = {
+  client: <publicKey>,
+  worker: <publicKey>,
+  totalAmount: number,
+  paidBefore: number,
+  paidAfter: number,
+  status: "CREATED" | "STARTED" | "DONE" | "ABANDONED"
+}
+*/
+
+
+
+/*
 Applique une transaction aux soldes
 ⚠️ suppose que la transaction est valide
 */
@@ -205,6 +232,8 @@ function createTransactionId(tx) {
     .update(tx.from + tx.to + tx.amount + tx.timestamp)
     .digest("hex");
 }
+
+
 
 /*
 ════════════════════════════════════════
