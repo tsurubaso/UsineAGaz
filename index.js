@@ -60,6 +60,19 @@ Message transaction:
 
 let mempool = [];
 
+let logs = [];
+
+function log(message) {
+  const line = `[${nodeID}] ${message}`;
+  console.log(line);
+
+  logs.push(line);
+
+  // limite à 30 lignes
+  if (logs.length > 30) logs.shift();
+}
+
+
 /*
 ════════════════════════════════════════
 ÉTAT DES SOLDES (LEDGER LOCAL)
@@ -68,7 +81,32 @@ let mempool = [];
 - Jamais envoyé sur le réseau
 - Recalculable à tout moment
 */
+
 let balances = {};
+
+/*
+════════════════════════════════════════
+AFFICHAGE WEB (DASHBOARD)
+════════════════════════════════════════
+*/
+
+function renderBalances() {
+  if (Object.keys(balances).length === 0) {
+    return "<p>Aucun solde disponible.</p>";
+  }
+
+  return `
+    <ul>
+      ${Object.entries(balances)
+        .map(
+          ([key, val]) =>
+            `<li><b>${key.slice(0, 12)}...</b> : ${val} Bouya</li>`,
+        )
+        .join("")}
+    </ul>
+  `;
+}
+
 
 /*
 ════════════════════════════════════════
@@ -669,4 +707,51 @@ server.listen(5000, () => {
       forgeBlock();
     }, 20000); // toutes les 20 secondes
   }
+});
+
+/*
+════════════════════════════════════════  
+9. DASHBOARD WEB (EXPRESS)
+════════════════════════════════════════
+*/
+import express from "express";
+
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send(`
+       <html>
+      <head>
+        <title>${nodeID} Dashboard</title>
+        <style>
+          body { font-family: sans-serif; padding: 20px; }
+          h1 { color: darkblue; }
+          .box { padding: 10px; margin: 10px 0; border: 1px solid #ccc; }
+        </style>
+      </head>
+      <body>
+        <h1>📡 Node ${nodeID}</h1>
+
+        <div class="box">
+          <h2>Blockchain</h2>
+          <p>Nombre de blocs : ${blockchain.length}</p>
+        </div>
+
+        <div class="box">
+          <h2>Mempool</h2>
+          <p>Transactions en attente : ${mempool.length}</p>
+        </div>
+
+        <div class="box">
+          <h2>Balances</h2>
+          ${renderBalances()}
+        </div>
+
+      </body>
+    </html>
+  `);
+});
+
+app.listen(3000, () => {
+  console.log(`[${nodeID}] 🌍 Web dashboard sur http://localhost:3000`);
 });

@@ -1,14 +1,16 @@
 services:
-
   node1:
     build: .
     environment:
       - NODE_ID=${node_id1}
       - PRIVATE_KEY=${NODE1_PRIVATE_KEY}
       - PUBLIC_KEY=${NODE1_PUBLIC_KEY}
+      - WEB_PORT=3000
     env_file:
       - .env
-
+    ports:
+      - "5001:5000"
+      - "3001:3000"
 
   node2:
     build: .
@@ -16,9 +18,13 @@ services:
       - NODE_ID=${node_id2}
       - PRIVATE_KEY=${NODE2_PRIVATE_KEY}
       - PUBLIC_KEY=${NODE2_PUBLIC_KEY}
+      - WEB_PORT=3000
     env_file:
       - .env
 
+    ports:
+      - "5002:5000"
+      - "3002:3000"
 
   node3:
     build: .
@@ -26,5 +32,9 @@ services:
       - NODE_ID=${node_id3}
       - PRIVATE_KEY=${NODE3_PRIVATE_KEY}
       - PUBLIC_KEY=${NODE3_PUBLIC_KEY}
+      - WEB_PORT=3000
     env_file:
       - .env
+    ports:
+      - "5003:5000"
+      - "3003:3000"
