@@ -721,13 +721,13 @@ app.get("/", (req, res) => {
       <head>
         <title>${nodeID} Dashboard</title>
         <style>
-          body { font-family: sans-serif; padding: 20px; }
+          body { font-family: sans-serif; padding: 5px; }
           h1 { color: darkblue; }
-          .box { padding: 10px; margin: 10px 0; border: 1px solid #ccc; }
+          .box { padding: 5px; margin: 5px 0; border: 1px solid #ccc; }
           pre {
   background: black;
   color: lime;
-  padding: 10px;
+  padding: 5px;
   font-size: 16px;
   height: 200px;
   overflow-y: scroll;
