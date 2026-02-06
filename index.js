@@ -273,6 +273,13 @@ function forgeBlock() {
   // Signature par le master
   block.signature = signBlock(block, privateKey);
   block.signer = publicKey;
+  // Ajout local
+  blockchain.push(block);
+
+  // Application aux soldes
+  for (const tx of block.data.transactions) {
+    applyTransaction(tx, balances);
+  }
   /*
       ════════════════════════════════════════
       NETTOYAGE DU MEMPOOL
@@ -293,22 +300,7 @@ function forgeBlock() {
 
   mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
 
-  // Ajout local
-  blockchain.push(block);
-
-// Ajout local
-blockchain.push(block);
-
-// Application aux soldes
-for (const tx of block.data.transactions) {
-  applyTransaction(tx, balances);
-}
-
-// Nettoyage du mempool
-mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
-
-console.log(`[${nodeID}] ⛏️ Bloc forgé (#${block.index})`);
-
+  console.log(`[${nodeID}] ⛏️ Bloc forgé (#${block.index})`);
 
   // Diffusion aux peers
   peers.forEach((peer) =>
@@ -580,12 +572,9 @@ toutes ses transactions deviennent confirmées.
 Donc on doit les retirer du mempool local.
 */
 
-const confirmedIds = new Set(
-  block.data.transactions.map((tx) => tx.id)
-);
+      const confirmedIds = new Set(block.data.transactions.map((tx) => tx.id));
 
-mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
-
+      mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
 
       // Application des transactions du bloc aux soldes
       for (const tx of block.data.transactions) {
