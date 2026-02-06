@@ -273,21 +273,42 @@ function forgeBlock() {
   // Signature par le master
   block.signature = signBlock(block, privateKey);
   block.signer = publicKey;
+  /*
+      ════════════════════════════════════════
+      NETTOYAGE DU MEMPOOL
+      ════════════════════════════════════════
+      Quand un bloc est accepté, toutes les transactions
+      qu’il contient ne doivent plus rester en attente.
+
+      Sinon un node pourrait :
+      - garder des transactions déjà confirmées
+      - tenter de les remettre dans un futur bloc
+      - créer des doublons logiques
+
+      Règle :
+      confirmed tx → supprimée du mempool
+      */
+
+  const confirmedIds = new Set(block.data.transactions.map((tx) => tx.id));
+
+  mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
 
   // Ajout local
   blockchain.push(block);
 
-  // Application des transactions du bloc aux soldes
-  for (const tx of block.data.transactions) {
-    applyTransaction(tx, balances);
-  }
+// Ajout local
+blockchain.push(block);
 
-  // On vide le mempool
-  mempool = [];
+// Application aux soldes
+for (const tx of block.data.transactions) {
+  applyTransaction(tx, balances);
+}
 
-  console.log(
-    `[${nodeID}] ⛏️ Bloc forgé (#${block.index}, ${transactions.length} tx)`,
-  );
+// Nettoyage du mempool
+mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
+
+console.log(`[${nodeID}] ⛏️ Bloc forgé (#${block.index})`);
+
 
   // Diffusion aux peers
   peers.forEach((peer) =>
@@ -549,6 +570,22 @@ function handleMessage(msg, socket = null) {
       // les transactions incluses dans ce bloc
 
       blockchain.push(block);
+      /*
+═══════════════════════════════════════
+NETTOYAGE DU MEMPOOL (FOLLOWERS)
+═══════════════════════════════════════
+Quand un bloc arrive du réseau,
+toutes ses transactions deviennent confirmées.
+
+Donc on doit les retirer du mempool local.
+*/
+
+const confirmedIds = new Set(
+  block.data.transactions.map((tx) => tx.id)
+);
+
+mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
+
 
       // Application des transactions du bloc aux soldes
       for (const tx of block.data.transactions) {
