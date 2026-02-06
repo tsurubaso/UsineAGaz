@@ -61,8 +61,6 @@ Message transaction:
 
 let mempool = [];
 
-
-
 function log(message) {
   const line = `[${nodeID}] ${message}`;
   console.log(line);
@@ -162,7 +160,7 @@ function bootstrapMoney() {
   // Seul node1 a le droit de faire ça
   if (nodeID !== "node1") return;
 
-  log(`[node1] 🪙 Bootstrapping Bouya-Bouya...`);
+  log(`>> 🪙 Bootstrapping Bouya-Bouya...`);
 
   // 1) Mint initial
   const mintTx = {
@@ -281,7 +279,7 @@ function forgeBlock() {
 
   // Pas de transactions → pas de bloc
   if (mempool.length === 0) {
-    log(`[${nodeID}] ⏸️ Mempool vide, rien à forger`);
+    log(`>> ⏸️ Mempool vide, rien à forger`);
     return;
   }
 
@@ -337,7 +335,7 @@ function forgeBlock() {
 
   mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
 
-  log(`[${nodeID}] ⛏️ Bloc forgé (#${block.index})`);
+  log(`>> ⛏️ Bloc forgé (#${block.index})`);
 
   // Diffusion aux peers
   peers.forEach((peer) =>
@@ -452,10 +450,10 @@ if (nodeID === "node1") {
   genesis.signer = publicKey;
 
   blockchain.push(genesis);
-  log(`[${nodeID}] 🧱 Genesis créé`);
+  log(`>> 🧱 Genesis créé`);
 } else {
   // Les autres nœuds attendent la synchro réseau
-  log(`[${nodeID}] ⏳ En attente de synchronisation`);
+  log(`>> ⏳ En attente de synchronisation`);
 }
 
 /*
@@ -561,17 +559,17 @@ function handleMessage(msg, socket = null) {
 
     // Réception d’une blockchain complète
     case "FULL_CHAIN":
-      log(`[${nodeID}] 📥 Chaîne reçue de ${msg.from}`);
+      log(`>> 📥 Chaîne reçue de ${msg.from}`);
 
       if (!isValidChain(msg.chain)) {
-        log(`[${nodeID}] ❌ Chaîne invalide`);
+        log(`>> ❌ Chaîne invalide`);
         return;
       }
 
       blockchain = chooseBestChain(blockchain, msg.chain);
       isSyncing = false;
 
-      log(`[${nodeID}] 🟢 Synchronisation terminée`);
+      log(`>> 🟢 Synchronisation terminée`);
       bootstrapMoney();
       break;
 
@@ -618,7 +616,7 @@ Donc on doit les retirer du mempool local.
         applyTransaction(tx, balances);
       }
 
-      log(`[${nodeID}] ➕ Bloc ajouté`);
+      log(`>> ➕ Bloc ajouté`);
       break;
     }
 
@@ -629,13 +627,13 @@ Donc on doit les retirer du mempool local.
 
       // 1. Vérification cryptographique
       if (!verifyTransaction(tx)) {
-        log(`[${nodeID}] ❌ Transaction invalide`);
+        log(`>> ❌ Transaction invalide`);
         return;
       }
 
       // Vérification économique
       if (!isTransactionEconomicallyValid(tx, balances)) {
-        log(`[${nodeID}] ❌ Solde insuffisant pour la transaction`);
+        log(`>> ❌ Solde insuffisant pour la transaction`);
         return;
       }
 
@@ -651,7 +649,7 @@ Donc on doit les retirer du mempool local.
 
       // 4. Ajout au mempool
       mempool.push(tx);
-      log(`[${nodeID}] 💸 Transaction acceptée (${mempool.length})`);
+      log(`>> 💸 Transaction acceptée (${mempool.length})`);
 
       // 5. Propagation réseau
       peers.forEach((peer) =>
@@ -689,11 +687,11 @@ const server = net.createServer((socket) => {
 */
 
 server.listen(5000, () => {
-  log(`[${nodeID}] 🟢 Serveur actif`);
+  log(`>> 🟢 Serveur actif`);
 
   // Synchronisation au démarrage
   setTimeout(() => {
-    log(`[${nodeID}] 🔄 Sync au démarrage`);
+    log(`>> 🔄 Sync au démarrage`);
     peers.forEach((peer) =>
       sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
     );
@@ -726,6 +724,16 @@ app.get("/", (req, res) => {
           body { font-family: sans-serif; padding: 20px; }
           h1 { color: darkblue; }
           .box { padding: 10px; margin: 10px 0; border: 1px solid #ccc; }
+          pre {
+  background: black;
+  color: lime;
+  padding: 10px;
+  font-size: 16px;
+  height: 200px;
+  overflow-y: scroll;
+  line-height: 1.8; /* ← espace entre les lignes */
+}
+
         </style>
       </head>
       <body>
@@ -760,5 +768,5 @@ ${logs.join("\n")}
 });
 
 app.listen(3000, () => {
-  log(`[${nodeID}] 🌍 Web dashboard sur http://localhost:3000`);
+  log(`>> 🌍 Web dashboard sur http://localhost:3000`);
 });
