@@ -13,8 +13,8 @@ Chaque conteneur définit NODE_ID
 */
 
 const nodeID = process.env.NODE_ID;
-const privateKey = process.env.NODE1_PRIVATE_KEY;
-const publicKey = process.env.NODE1_PUBLIC_KEY;
+const privateKey = process.env[`NODE${nodeID.slice(-1)}_PRIVATE_KEY`];
+const publicKey = process.env[`NODE${nodeID.slice(-1)}_PUBLIC_KEY`];
 
 // Liste statique de peers (simplifié volontairement)
 const peers = ["node1", "node2", "node3"].filter((id) => id !== nodeID);
@@ -248,6 +248,17 @@ function hashTransaction(tx) {
     .update(tx.from + tx.to + tx.amount + tx.timestamp)
     .digest(); // Uint8Array
 }
+
+function signTransaction(tx, privateKeyHex) {
+  const msgHash = hashTransaction(tx);
+  const keyBytes = hexToBytes(privateKeyHex);
+
+  const signature = secp256k1.sign(msgHash, keyBytes);
+
+  // Stockage en hex pour JSON
+  return Buffer.from(signature).toString("hex");
+}
+log("Public key length = " + publicKey.length);
 
 function verifyTransaction(tx) {
   if (!tx.signature || !tx.from) return false;
@@ -714,6 +725,7 @@ server.listen(5000, () => {
 import express from "express";
 
 const app = express();
+app.use(express.urlencoded({ extended: true }));
 
 app.get("/", (req, res) => {
   res.send(`
@@ -753,6 +765,21 @@ app.get("/", (req, res) => {
           <h3>Balances</h3>
           ${renderBalances()}
         </div>
+        <div class="box">
+  <h3>Créer une transaction</h3>
+
+  <form method="POST" action="/tx">
+    <p>To (public key)</p>
+    <textarea name="to" rows="2" style="width:100%;"></textarea>
+
+    <p>Amount</p>
+    <input name="amount" type="number" style="width:100%;" />
+
+    <br><br>
+    <button type="submit">💸 Envoyer</button>
+  </form>
+</div>
+
 
         <div class="box">
   <h3>Logs récents</h3>
@@ -765,6 +792,41 @@ ${logs.join("\n")}
       </body>
     </html>
   `);
+});
+
+log("signTransaction type = " + typeof signTransaction);
+
+app.post("/tx", (req, res) => {
+  const { to, amount } = req.body;
+
+  const tx = {
+    from: publicKey,
+    to: to.trim(),
+    amount: parseInt(amount),
+    timestamp: Date.now(),
+  };
+
+  // Signature
+  tx.signature = signTransaction(tx, privateKey);
+
+  // ID canonique
+  tx.id = createTransactionId(tx);
+
+  // Ajout au mempool local
+  mempool.push(tx);
+
+  logs.push(`💸 TX créée → ${tx.amount} vers ${tx.to.slice(0, 12)}...`);
+
+  // Propagation réseau (optionnel tout de suite)
+  peers.forEach((peer) =>
+    sendMessage(peer, {
+      type: "NEW_TX",
+      from: nodeID,
+      tx,
+    }),
+  );
+
+  res.redirect("/");
 });
 
 app.listen(3000, () => {
