@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Node Dashboard</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+
+  <body>
+    <h1 id="title">📡 Node</h1>
+
+    <div class="box">
+      <h2>Balances</h2>
+      <div id="balances"></div>
+    </div>
+
+    <div class="box">
+      <h2>Créer une transaction</h2>
+
+      <textarea id="txTo" placeholder="to = publicKey"></textarea>
+      <textarea id="txAmount" placeholder="amount"></textarea>
+
+      <button onclick="sendTx()">Envoyer</button>
+    </div>
+
+    <div class="box">
+      <h2>Logs récents</h2>
+      <pre id="logs"></pre>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

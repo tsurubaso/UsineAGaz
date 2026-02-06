@@ -721,13 +721,13 @@ app.get("/", (req, res) => {
       <head>
         <title>${nodeID} Dashboard</title>
         <style>
-          body { font-family: sans-serif; padding: 5px; }
+          body { font-family: sans-serif; padding: 2px; }
           h1 { color: darkblue; }
-          .box { padding: 5px; margin: 5px 0; border: 1px solid #ccc; }
+          .box { padding: 1px; margin: 1px 0; border: 1px solid #ccc; }
           pre {
   background: black;
   color: lime;
-  padding: 5px;
+  padding: 2px;
   font-size: 16px;
   height: 200px;
   overflow-y: scroll;
@@ -737,25 +737,25 @@ app.get("/", (req, res) => {
         </style>
       </head>
       <body>
-        <h1>📡 Node ${nodeID}</h1>
+        <h3>📡 Node ${nodeID}</h3>
 
         <div class="box">
-          <h2>Blockchain</h2>
+          <h3>Blockchain</h3>
           <p>Nombre de blocs : ${blockchain.length}</p>
         </div>
 
         <div class="box">
-          <h2>Mempool</h2>
+          <h3>Mempool</h3>
           <p>Transactions en attente : ${mempool.length}</p>
         </div>
 
         <div class="box">
-          <h2>Balances</h2>
+          <h3>Balances</h3>
           ${renderBalances()}
         </div>
 
         <div class="box">
-  <h2>Logs récents</h2>
+  <h3>Logs récents</h3>
   <pre>
 ${logs.join("\n")}
   </pre>
