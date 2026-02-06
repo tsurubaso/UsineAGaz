@@ -2,6 +2,7 @@ import crypto from "crypto";
 import net from "net";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
+let logs = [];
 
 /*
 ════════════════════════════════════════
@@ -18,7 +19,7 @@ const publicKey = process.env.NODE1_PUBLIC_KEY;
 // Liste statique de peers (simplifié volontairement)
 const peers = ["node1", "node2", "node3"].filter((id) => id !== nodeID);
 
-console.log(`\n--- DÉMARRAGE DU NŒUD ${nodeID} ---`);
+log(`\n--- DÉMARRAGE DU NŒUD ${nodeID} ---`);
 
 /*
 ════════════════════════════════════════
@@ -60,7 +61,7 @@ Message transaction:
 
 let mempool = [];
 
-let logs = [];
+
 
 function log(message) {
   const line = `[${nodeID}] ${message}`;
@@ -71,7 +72,6 @@ function log(message) {
   // limite à 30 lignes
   if (logs.length > 30) logs.shift();
 }
-
 
 /*
 ════════════════════════════════════════
@@ -106,7 +106,6 @@ function renderBalances() {
     </ul>
   `;
 }
-
 
 /*
 ════════════════════════════════════════
@@ -163,7 +162,7 @@ function bootstrapMoney() {
   // Seul node1 a le droit de faire ça
   if (nodeID !== "node1") return;
 
-  console.log(`[node1] 🪙 Bootstrapping Bouya-Bouya...`);
+  log(`[node1] 🪙 Bootstrapping Bouya-Bouya...`);
 
   // 1) Mint initial
   const mintTx = {
@@ -202,7 +201,7 @@ function bootstrapMoney() {
 
   mempool.push(payNode3);
 
-  console.log(`[node1] ✅ Mint + distribution ajoutés au mempool`);
+  log(`[node1] ✅ Mint + distribution ajoutés au mempool`);
 
   bootstrapDone = true;
 }
@@ -282,7 +281,7 @@ function forgeBlock() {
 
   // Pas de transactions → pas de bloc
   if (mempool.length === 0) {
-    console.log(`[${nodeID}] ⏸️ Mempool vide, rien à forger`);
+    log(`[${nodeID}] ⏸️ Mempool vide, rien à forger`);
     return;
   }
 
@@ -338,7 +337,7 @@ function forgeBlock() {
 
   mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
 
-  console.log(`[${nodeID}] ⛏️ Bloc forgé (#${block.index})`);
+  log(`[${nodeID}] ⛏️ Bloc forgé (#${block.index})`);
 
   // Diffusion aux peers
   peers.forEach((peer) =>
@@ -453,10 +452,10 @@ if (nodeID === "node1") {
   genesis.signer = publicKey;
 
   blockchain.push(genesis);
-  console.log(`[${nodeID}] 🧱 Genesis créé`);
+  log(`[${nodeID}] 🧱 Genesis créé`);
 } else {
   // Les autres nœuds attendent la synchro réseau
-  console.log(`[${nodeID}] ⏳ En attente de synchronisation`);
+  log(`[${nodeID}] ⏳ En attente de synchronisation`);
 }
 
 /*
@@ -562,17 +561,17 @@ function handleMessage(msg, socket = null) {
 
     // Réception d’une blockchain complète
     case "FULL_CHAIN":
-      console.log(`[${nodeID}] 📥 Chaîne reçue de ${msg.from}`);
+      log(`[${nodeID}] 📥 Chaîne reçue de ${msg.from}`);
 
       if (!isValidChain(msg.chain)) {
-        console.log(`[${nodeID}] ❌ Chaîne invalide`);
+        log(`[${nodeID}] ❌ Chaîne invalide`);
         return;
       }
 
       blockchain = chooseBestChain(blockchain, msg.chain);
       isSyncing = false;
 
-      console.log(`[${nodeID}] 🟢 Synchronisation terminée`);
+      log(`[${nodeID}] 🟢 Synchronisation terminée`);
       bootstrapMoney();
       break;
 
@@ -619,7 +618,7 @@ Donc on doit les retirer du mempool local.
         applyTransaction(tx, balances);
       }
 
-      console.log(`[${nodeID}] ➕ Bloc ajouté`);
+      log(`[${nodeID}] ➕ Bloc ajouté`);
       break;
     }
 
@@ -630,13 +629,13 @@ Donc on doit les retirer du mempool local.
 
       // 1. Vérification cryptographique
       if (!verifyTransaction(tx)) {
-        console.log(`[${nodeID}] ❌ Transaction invalide`);
+        log(`[${nodeID}] ❌ Transaction invalide`);
         return;
       }
 
       // Vérification économique
       if (!isTransactionEconomicallyValid(tx, balances)) {
-        console.log(`[${nodeID}] ❌ Solde insuffisant pour la transaction`);
+        log(`[${nodeID}] ❌ Solde insuffisant pour la transaction`);
         return;
       }
 
@@ -652,7 +651,7 @@ Donc on doit les retirer du mempool local.
 
       // 4. Ajout au mempool
       mempool.push(tx);
-      console.log(`[${nodeID}] 💸 Transaction acceptée (${mempool.length})`);
+      log(`[${nodeID}] 💸 Transaction acceptée (${mempool.length})`);
 
       // 5. Propagation réseau
       peers.forEach((peer) =>
@@ -690,11 +689,11 @@ const server = net.createServer((socket) => {
 */
 
 server.listen(5000, () => {
-  console.log(`[${nodeID}] 🟢 Serveur actif`);
+  log(`[${nodeID}] 🟢 Serveur actif`);
 
   // Synchronisation au démarrage
   setTimeout(() => {
-    console.log(`[${nodeID}] 🔄 Sync au démarrage`);
+    log(`[${nodeID}] 🔄 Sync au démarrage`);
     peers.forEach((peer) =>
       sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
     );
@@ -747,11 +746,19 @@ app.get("/", (req, res) => {
           ${renderBalances()}
         </div>
 
+        <div class="box">
+  <h2>Logs récents</h2>
+  <pre>
+${logs.join("\n")}
+  </pre>
+</div>
+
+
       </body>
     </html>
   `);
 });
 
 app.listen(3000, () => {
-  console.log(`[${nodeID}] 🌍 Web dashboard sur http://localhost:3000`);
+  log(`[${nodeID}] 🌍 Web dashboard sur http://localhost:3000`);
 });
