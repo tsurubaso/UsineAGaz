@@ -95,13 +95,92 @@ services[serviceId] = {
 }
 */
 
+/*
+════════════════════════════════════════
+TRANSACTION SPÉCIALE : MINT
+════════════════════════════════════════
+- Seul node1 a le droit de créer de la monnaie
+- Pas de signature requise
+- Utilisée uniquement dans le Genesis (pour l’instant)
+*/
 
+function isMintTransaction(tx) {
+  return tx.from === "MINT";
+}
+
+/*
+═══════════════════════════════════════
+BOOTSTRAP MONÉTAIRE
+- Node1 crée la monnaie après démarrage
+- Puis distribue aux autres nodes
+- Ne touche pas au Genesis
+═══════════════════════════════════════
+*/
+
+let bootstrapDone = false;
+
+function bootstrapMoney() {
+  if (bootstrapDone) return;
+
+  // Seul node1 a le droit de faire ça
+  if (nodeID !== "node1") return;
+
+  console.log(`[node1] 🪙 Bootstrapping Bouya-Bouya...`);
+
+  // 1) Mint initial
+  const mintTx = {
+    from: "MINT",
+    to: publicKey,
+    amount: 1000,
+    timestamp: Date.now(),
+    signature: null,
+  };
+
+  mintTx.id = createTransactionId(mintTx);
+  mempool.push(mintTx);
+
+  // 2) Distribution immédiate
+  const payNode2 = {
+    from: publicKey,
+    to: process.env.NODE2_PUBLIC_KEY,
+    amount: 100,
+    timestamp: Date.now(),
+  };
+
+  payNode2.signature = signTransaction(payNode2, privateKey);
+  payNode2.id = createTransactionId(payNode2);
+
+  mempool.push(payNode2);
+
+  const payNode3 = {
+    from: publicKey,
+    to: process.env.NODE3_PUBLIC_KEY,
+    amount: 100,
+    timestamp: Date.now(),
+  };
+
+  payNode3.signature = signTransaction(payNode3, privateKey);
+  payNode3.id = createTransactionId(payNode3);
+
+  mempool.push(payNode3);
+
+  console.log(`[node1] ✅ Mint + distribution ajoutés au mempool`);
+
+  bootstrapDone = true;
+}
 
 /*
 Applique une transaction aux soldes
 ⚠️ suppose que la transaction est valide
 */
 function applyTransaction(tx, balances) {
+  // Cas spécial : création monétaire
+  if (isMintTransaction(tx)) {
+    balances[tx.to] = (balances[tx.to] || 0) + tx.amount;
+    return;
+  }
+
+  // Cas normal : transfert
   balances[tx.from] = (balances[tx.from] || 0) - tx.amount;
   balances[tx.to] = (balances[tx.to] || 0) + tx.amount;
 }
@@ -111,6 +190,10 @@ Vérifie que l’émetteur a assez de solde
 (ne touche pas aux signatures)
 */
 function isTransactionEconomicallyValid(tx, balances) {
+  // Une transaction MINT crée de la monnaie → toujours valide
+  if (isMintTransaction(tx)) return true;
+
+  // Sinon, il faut avoir le solde suffisant
   return (balances[tx.from] || 0) >= tx.amount;
 }
 
@@ -232,8 +315,6 @@ function createTransactionId(tx) {
     .update(tx.from + tx.to + tx.amount + tx.timestamp)
     .digest("hex");
 }
-
-
 
 /*
 ════════════════════════════════════════
@@ -441,6 +522,7 @@ function handleMessage(msg, socket = null) {
       isSyncing = false;
 
       console.log(`[${nodeID}] 🟢 Synchronisation terminée`);
+      bootstrapMoney();
       break;
 
     // Réception d’un nouveau bloc
