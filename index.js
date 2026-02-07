@@ -4,6 +4,9 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
 let logs = [];
 
+import dotenv from "dotenv";
+dotenv.config();
+
 /*
 ════════════════════════════════════════
 0. CONFIGURATION DU NŒUD
@@ -199,7 +202,7 @@ function bootstrapMoney() {
 
   mempool.push(payNode3);
 
-  log(`[node1] ✅ Mint + distribution ajoutés au mempool`);
+  log(`>> ✅ Mint + distribution ajoutés au mempool`);
 
   bootstrapDone = true;
 }
@@ -794,7 +797,6 @@ ${logs.join("\n")}
   `);
 });
 
-log("signTransaction type = " + typeof signTransaction);
 
 app.post("/tx", (req, res) => {
   const { to, amount } = req.body;
