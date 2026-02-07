@@ -1,3 +1,5 @@
+import fs from "fs";
+dotenv.config();
 import crypto from "crypto";
 import net from "net";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
@@ -6,6 +8,7 @@ let logs = [];
 
 import dotenv from "dotenv";
 dotenv.config();
+const MASTER_ID = process.env.MASTER_ID || "node1";
 
 /*
 ════════════════════════════════════════
@@ -19,10 +22,35 @@ const nodeID = process.env.NODE_ID;
 const privateKey = process.env[`NODE${nodeID.slice(-1)}_PRIVATE_KEY`];
 const publicKey = process.env[`NODE${nodeID.slice(-1)}_PUBLIC_KEY`];
 
-// Liste statique de peers (simplifié volontairement)
-const peers = ["node1", "node2", "node3"].filter((id) => id !== nodeID);
-
 log(`\n--- DÉMARRAGE DU NŒUD ${nodeID} ---`);
+
+/*
+════════════════════════════════════════
+PEERS CONFIG (JSON)
+════════════════════════════════════════
+*/
+
+const peersConfig = JSON.parse(fs.readFileSync("./peers.json", "utf-8"));
+
+const NETWORK_MODE = process.env.NETWORK_MODE || "docker";
+
+/*
+════════════════════════════════════════
+LISTE DES PEERS (DYNAMIQUE)
+════════════════════════════════════════
+*/
+
+let peers = [];
+
+if (NETWORK_MODE === "docker") {
+  peers = peersConfig.peersDocker.filter((id) => id !== nodeID);
+}
+
+if (NETWORK_MODE === "ip") {
+  peers = peersConfig.peersIP;
+}
+
+log(`>> Peers chargés (${NETWORK_MODE}) : ${JSON.stringify(peers)}`);
 
 /*
 ════════════════════════════════════════
@@ -161,7 +189,7 @@ function bootstrapMoney() {
   if (bootstrapDone) return;
 
   // Seul node1 a le droit de faire ça
-  if (nodeID !== "node1") return;
+  if (nodeID !== MASTER_ID) return;
 
   log(`>> 🪙 Bootstrapping Bouya-Bouya...`);
 
@@ -289,7 +317,7 @@ Le master :
 
 function forgeBlock() {
   // Sécurité : seul le master forge
-  if (nodeID !== "node1") return;
+  if (nodeID !== MASTER_ID) return;
 
   // Pas de transactions → pas de bloc
   if (mempool.length === 0) {
@@ -458,7 +486,7 @@ function createGenesisBlock() {
 }
 
 // Le master crée et signe le Genesis
-if (nodeID === "node1") {
+if (nodeID === MASTER_ID) {
   const genesis = createGenesisBlock();
   genesis.signature = signBlock(genesis, privateKey);
   genesis.signer = publicKey;
@@ -532,7 +560,16 @@ et recevoir les réponses
 */
 
 function sendMessage(target, message) {
-  const client = net.createConnection({ host: target, port: 5000 }, () => {
+  let host = target;
+  let port = 5000;
+
+  // Mode IP : "192.168.0.112:5000"
+  if (target.includes(":")) {
+    [host, port] = target.split(":");
+    port = parseInt(port);
+  }
+
+  const client = net.createConnection({ host, port }, () => {
     client.write(JSON.stringify(message));
   });
 
@@ -713,7 +750,7 @@ server.listen(5000, () => {
 
   // Le master forge un bloc toutes les 20 secondes
 
-  if (nodeID === "node1") {
+  if (nodeID === MASTER_ID) {
     setInterval(() => {
       forgeBlock();
     }, 20000); // toutes les 20 secondes
@@ -797,7 +834,6 @@ ${logs.join("\n")}
   `);
 });
 
-
 app.post("/tx", (req, res) => {
   const { to, amount } = req.body;
 
@@ -831,6 +867,6 @@ app.post("/tx", (req, res) => {
   res.redirect("/");
 });
 
-app.listen(3000, () => {
-  log(`>> 🌍 Web dashboard sur http://localhost:3000`);
+app.listen(3000 + parseInt(nodeID.slice(-1)), () => {
+  log(`>> 🌍 Web dashboard sur http://localhost:300${nodeID.slice(-1)}`);
 });
