@@ -1,227 +1,253 @@
-<!-- for visualisation Ctrl + Shift + V -->
----
-
-
-`crypto` est le module natif Node.js.
-Il sert uniquement au **hachage SHA-256**, pas à la signature elliptique.
-
-`net` est le module TCP bas niveau.
-Ici, tu construis volontairement un réseau **sans HTTP, sans WebSocket**, pour rester au plus proche d’un vrai protocole P2P.
-
-`@noble/curves/secp256k1` est la librairie cryptographique moderne.
-Elle ne fait **que de la crypto pure**, sans réseau, sans encodage implicite.
-
-`hexToBytes` est indispensable : noble **ne travaille jamais avec des strings**, uniquement avec des bytes (`Uint8Array`).
 
 ---
 
-### 0. Configuration du nœud
+# Bouya‑Bouya Blockchain — Mini‑réseau distribué en Node.js
 
-Chaque instance du programme est **le même code**, mais son comportement dépend de l’environnement :
-
-* `NODE_ID` : identifie le nœud (node1, node2, node3)
-* `NODE1_PRIVATE_KEY` : clé privée du MASTER uniquement
-* `NODE1_PUBLIC_KEY` : clé publique du MASTER (connue de tous)
+Bouya‑Bouya est une blockchain pédagogique minimaliste, distribuée sur plusieurs nœuds TCP, avec signatures ECDSA secp256k1, propagation réseau, mempool, forge de blocs et dashboard web intégré.  
+Chaque nœud fonctionne dans un conteneur ou en mode IP, et synchronise sa copie locale de la chaîne.
 
 ---
 
-### 1. État local
+## 🚀 Fonctionnalités principales
 
-```js
-let blockchain = [];
-```
-
-Chaque nœud possède **sa propre copie locale** de la blockchain.
-Il n’y a pas de base de données ici :
-
-* c’est volontaire
-* ça permet de raisonner uniquement sur la logique protocolaire
-
----
-
-### 2. Fonctions cryptographiques (hors réseau)
-
-Cette section est très importante conceptuellement.
-
-👉 **Aucune de ces fonctions ne connaît le réseau, les sockets ou les peers**.
-
----
-
-#### Hash structurel du bloc
-
-`calculateHash(...)`
-
-Ce hash :
-
-* est **lisible** (hex)
-* est **stocké dans le bloc**
-* sert à **chaîner les blocs entre eux**
-
-Il garantit :
-
-* l’intégrité du contenu
-* la continuité de la chaîne
-
-Ce hash **n’est PAS utilisé pour la signature**.
-C’est volontairement séparé.
+- Réseau pair‑à‑pair via TCP (port 5000)
+- Blockchain complète avec :
+  - Genesis signé
+  - Chaînage cryptographique SHA‑256
+  - Validation stricte des blocs
+- Transactions signées (ECDSA secp256k1)
+- Mempool distribué avec anti‑doublons
+- Forge automatique de blocs (master uniquement)
+- Propagation réseau :
+  - `GET_CHAIN`
+  - `FULL_CHAIN`
+  - `NEW_TX`
+  - `NEW_BLOCK`
+- Ledger local recalculé à partir de la chaîne
+- Système de mint contrôlé (master seulement)
+- Dashboard web par nœud (port 300X)
+- Synchronisation automatique au démarrage
 
 ---
 
-#### Hash cryptographique pour la signature
+## 🧱 Architecture du réseau
 
-`hashBlockForSignature(block)`
+Le réseau est composé de plusieurs nœuds :
 
-Ici, on prépare **le message cryptographique**.
+- `node1` : **master**
+  - Forge les blocs
+  - Peut créer de la monnaie (mint)
+- `node2`, `node3`, … : **followers**
+  - Reçoivent les blocs
+  - Maintiennent leur mempool
+  - Valident les transactions
 
-Points clés :
+Chaque nœud possède :
 
-* même contenu logique que le hash structurel
-* mais sortie en **bytes**, pas en hex
-* format exigé par noble
-
-👉 C’est ce hash précis qui est signé et vérifié.
-👉 Aucune ambiguïté possible sur ce qui est signé.
-
----
-
-#### Signature du bloc (MASTER uniquement)
-
-`signBlock(block, privateKeyHex)`
-
-Processus exact :
-
-1. Calcul du hash cryptographique (bytes)
-2. Conversion de la clé privée hex → bytes
-3. Signature elliptique secp256k1
-4. Conversion du résultat en hex pour le transport réseau
-
-Important conceptuellement :
-
-* **on signe des bytes**
-* **on transporte du hex**
-* la frontière est claire
+- une clé privée
+- une clé publique
+- un mempool local
+- une copie locale de la blockchain
+- un ledger dérivé de la chaîne
 
 ---
 
-#### Vérification de la signature
+## 🔐 Cryptographie
 
-`verifyBlockSignature(block)`
+### Signatures
+- Courbe : **secp256k1** (via `@noble/curves`)
+- Chaque transaction est signée avec la clé privée de l’émetteur
+- Les blocs sont signés uniquement par le master
 
-C’est le miroir exact de la signature.
-
-Le nœud :
-
-* reconstruit le message (hash bytes)
-* reconvertit signature et clé publique en bytes
-* appelle `secp256k1.verify(...)`
-
-Si ça échoue :
-
-* soit le contenu a été modifié
-* soit la signature ne correspond pas au signataire
-
-👉 Aucune confiance implicite.
-👉 Zéro logique métier ici, uniquement de la crypto.
+### Hashs
+- SHA‑256 pour :
+  - les transactions
+  - les blocs
+  - les identifiants de transaction
 
 ---
 
-### 3. Bloc Genesis
-
-`createGenesisBlock()`
-
-Le Genesis est :
-
-* déterministe
-* identique sur tous les nœuds
-* non dépendant du réseau
-
-Il **n’est pas signé ici**.
-La signature est ajoutée plus tard, uniquement par le MASTER.
-
-C’est très propre comme séparation de responsabilités.
-
----
-
-### 4. Initialisation de la blockchain
-
-Tous les nœuds :
-
-* créent le Genesis localement
-* le poussent dans leur blockchain
-
-Mais :
-
-* **seul node1 le signe**
-* les autres nœuds le reçoivent signé via le réseau
-
-C’est exactement le rôle d’un **nœud autorité initial**.
-
----
-
-### 5. Réseau : peers et envoi
-
-Les peers sont calculés dynamiquement :
-
-```js
-["node1", "node2", "node3"].filter(...)
-```
-
-Chaque nœud sait :
-
-* qui il est
-* qui il n’est pas
-
-`sendMessage()` :
-
-* ouvre une connexion TCP
-* envoie un message JSON brut
-* ferme la connexion
-
-👉 Simple, lisible, suffisant pour un proto P2P.
-
----
-
-### 6. Serveur TCP
-
-Chaque nœud écoute sur le même port.
-
-À la réception :
-
-1. Parsing JSON
-2. Vérification du type de message
-3. Validation du bloc
-
-La validation est **strictement ordonnée** :
-
-1. hash structurel
-2. signature cryptographique
-
-👉 Si le hash échoue, inutile de vérifier la signature.
-👉 C’est exactement l’ordre logique attendu.
-
----
-
-### 7. Démarrage
+## 🔄 Synchronisation réseau
 
 Au démarrage :
 
-* chaque nœud lance son serveur
-* le MASTER vérifie qu’il possède bien une clé privée
-* le MASTER diffuse le Genesis après un délai
+1. Le nœud contacte tous ses pairs via `GET_CHAIN`
+2. Le peer répond avec `FULL_CHAIN`
+3. Le nœud valide la chaîne reçue :
+   - Genesis strict
+   - Hashs
+   - Signatures
+4. La chaîne la plus longue est adoptée
+5. Le master exécute le **bootstrap monétaire** (mint + distribution)
 
-Le `setTimeout` est là pour :
+Pendant la vie du réseau :
 
-* laisser les autres nœuds démarrer
-* éviter des erreurs de connexion prématurées
+- Les transactions se propagent via `NEW_TX`
+- Les blocs se propagent via `NEW_BLOCK`
+- Le mempool est nettoyé automatiquement lorsque les transactions sont confirmées
 
 ---
 
-### En résumé
+## ⛏️ Forge de blocs (master uniquement)
 
-On a :
+Toutes les 20 secondes :
 
-* une **base blockchain saine**
-* une **crypto moderne correctement utilisée**
-* une **séparation nette entre logique, crypto et réseau**
-* un Genesis signé proprement
-* une validation réaliste côté nœuds
+1. Le master prend **tout le mempool**
+2. Crée un bloc :
+   - index
+   - previousHash
+   - timestamp
+   - transactions
+3. Calcule le hash structurel
+4. Signe le bloc
+5. L’ajoute à sa chaîne
+6. Applique les transactions au ledger
+7. Diffuse le bloc aux autres nœuds
+
+Les followers :
+
+- Vérifient le bloc
+- Nettoient leur mempool
+- Appliquent les transactions
+
+---
+
+## 💸 Transactions
+
+Format :
+
+```json
+{
+  "from": "<publicKey>",
+  "to": "<publicKey>",
+  "amount": 42,
+  "timestamp": 1700000000000,
+  "signature": "<hex>",
+  "id": "<sha256>"
+}
+```
+
+Validation :
+
+- Signature ECDSA valide
+- Solde suffisant (sauf mint)
+- Anti‑doublon via `id`
+
+Propagation automatique à tous les peers.
+
+---
+
+## 🪙 Mint & Bootstrap monétaire
+
+Uniquement pour `node1`.
+
+Au premier démarrage :
+
+1. Mint de 1000 Bouya pour le master
+2. Distribution automatique :
+   - 100 Bouya → node2
+   - 100 Bouya → node3
+3. Les transactions sont ajoutées au mempool
+4. Elles seront confirmées dans le premier bloc forgé
+
+---
+
+## 🌐 Dashboard Web
+
+Chaque nœud expose une interface web :
+
+```
+http://localhost:3001  → node1
+http://localhost:3002  → node2
+http://localhost:3003  → node3
+```
+
+Affiche :
+
+- Nombre de blocs
+- Taille du mempool
+- Soldes
+- Logs récents
+- Formulaire pour créer une transaction
+
+---
+
+## ⚙️ Configuration
+
+### Variables d’environnement
+
+```
+NODE_ID=node1
+MASTER_ID=node1
+NETWORK_MODE=docker | ip
+
+NODE1_PRIVATE_KEY=...
+NODE1_PUBLIC_KEY=...
+NODE2_PRIVATE_KEY=...
+NODE2_PUBLIC_KEY=...
+NODE3_PRIVATE_KEY=...
+NODE3_PUBLIC_KEY=...
+```
+
+### peers.json
+
+```json
+{
+  "peersDocker": ["node1", "node2", "node3"],
+  "peersIP": ["192.168.0.10:5000", "192.168.0.11:5000"]
+}
+```
+
+---
+
+## ▶️ Lancement
+
+### Mode Docker
+Chaque conteneur définit son `NODE_ID`.
+
+### Mode local
+Lancer plusieurs instances :
+
+```
+NODE_ID=node1 node app.js
+NODE_ID=node2 node app.js
+NODE_ID=node3 node app.js
+```
+
+---
+
+## 📁 Structure du projet
+
+```
+.
+├── app.js
+├── peers.json
+├── .env
+└── README.md
+```
+
+---
+
+## 🧪 Tests manuels
+
+- Créer une transaction via le dashboard
+- Vérifier sa propagation dans les logs
+- Attendre la forge du bloc
+- Vérifier la mise à jour des soldes
+- Vérifier la suppression du mempool
+
+---
+
+## 📌 Objectifs pédagogiques
+
+Ce projet illustre :
+
+- la logique d’une blockchain distribuée
+- la propagation P2P
+- la validation cryptographique
+- la gestion d’un mempool
+- la forge de blocs
+- la synchronisation de chaînes
+- la gestion d’un ledger dérivé
+
+---
