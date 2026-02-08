@@ -197,10 +197,6 @@ function bootstrapMoney() {
   // Seul node1 a le droit de faire ça
   if (nodeID !== MASTER_ID) return;
   // SÉCURITÉ : Si aucun mouvement, on ne crée pas de bloc inutile
-  if (mempool.length === 0) {
-    log(`>> ⏸️ Mempool vide, rien à forger`);
-    return;
-  }
 
   log(`>> 🪙 Bootstrapping Bouya-Bouya...`);
 
@@ -243,7 +239,7 @@ function bootstrapMoney() {
     mempool.push(payNode3);
   }
 
-  log(`>> ✅ Mint + distribution ajoutés au mempool`);
+  log(`>> ✅ Mint + distribution ajoutés au mempool (${mempool.length} tx`);
   // FORCE LE PREMIER BLOC IMMÉDIATEMENT
   log(`>> ⛏️ Forgeage immédiat du bloc de bootstrap...`);
   forgeBlock();
@@ -343,7 +339,7 @@ function forgeBlock() {
     log(`>> ⏸️ Mempool vide, rien à forger`);
     return;
   }
-
+  log(`>> ⛏️ Forgeage en cours...`); // Ajoute ce log pour voir si ça entre ici
   const lastBlock = blockchain[blockchain.length - 1];
 
   // On prend TOUT le mempool (simple et volontaire)
@@ -396,7 +392,7 @@ function forgeBlock() {
 
   mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
 
-  log(`>> ⛏️ Bloc forgé (#${block.index})`);
+  log(`>> ✅ Bloc #${block.index} forgé et ajouté à la chaîne localement`);
 
   // Diffusion aux peers
   peers.forEach((peer) =>
@@ -827,32 +823,27 @@ switch (NETWORK_MODE) {
 }
 
 function startNode() {
-  // Sync initiale
+  // Sync initiale pour tout le monde
   setTimeout(() => {
     log(">> 🔄 Sync au démarrage");
     peers.forEach((peer) =>
       sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
     );
   }, 1500);
-
-  // Bootstrap master
+  // B. Logique spécifique au MASTER
   if (nodeID === MASTER_ID) {
-    setTimeout(() => {
-      bootstrapMoney();
-    }, 2000);
-
-    // Forge loop
+    // On lance le bootstrap un peu après la synchro
+    setTimeout(() => bootstrapMoney(), 3000);
+    // On lance la boucle de forge permanente
     setInterval(() => forgeBlock(), 20000);
-    // Dans startNode()
-    if (nodeID !== MASTER_ID) {
-      // Toutes les 15 secondes, on vérifie si on est à jour
-      setInterval(() => {
-        log(">> 🔍 Vérification périodique de la chaîne...");
-        peers.forEach((peer) =>
-          sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
-        );
-      }, 15000);
-    }
+  } else {
+    // Logique Follower (Polling) - Sorti du bloc Master
+    setInterval(() => {
+      log(">> 🔍 Vérification périodique de la chaîne...");
+      peers.forEach((peer) =>
+        sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
+      );
+    }, 15000);
   }
 }
 
