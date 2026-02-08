@@ -9,7 +9,8 @@ let logs = [];
 import dotenv from "dotenv";
 dotenv.config();
 const MASTER_ID = process.env.MASTER_ID || "node1";
-const WEB_PORT = process.env.WEB_PORT || 3000;
+const WEB_PORT = parseInt(process.env.WEB_PORT || "3000");
+const P2P_PORT = parseInt(process.env.P2P_PORT || "5000");
 
 const NETWORK_MODE = process.env.NETWORK_MODE || "docker";
 
@@ -563,7 +564,7 @@ et recevoir les réponses
 
 function sendMessage(target, message) {
   let host = target;
-  let port = 5000;
+  let port = P2P_PORT;
 
   // Mode IP : "192.168.0.112:5000"
   if (target.includes(":")) {
@@ -743,23 +744,23 @@ const server = net.createServer((socket) => {
 
 switch (NETWORK_MODE) {
   case "docker":
-    server.listen(5000, () => {
-      log(`>> 🟢 Serveur P2P actif (Docker) sur port 5000`);
+    server.listen(P2P_PORT, () => {
+       log(`>> 🟢 Serveur P2P actif sur port ${P2P_PORT}`);
       startNode();
       
     });
     break;
 
   case "ip":
-    server.listen(5000, "0.0.0.0", () => {
-      log(`>> 🟢 Serveur P2P actif (IP réel) sur port  5000`);
+    server.listen(P2P_PORT, "0.0.0.0", () => {
+       log(`>> 🟢 Serveur P2P actif sur port ${P2P_PORT}`);
       startNode();
     });
     break;
 
   default:
-    server.listen(5000, () => {
-      log(`>> 🟢 Serveur P2P actif (local default) sur port  5000`);
+    server.listen(P2P_PORT, () => {
+       log(`>> 🟢 Serveur P2P actif sur port ${P2P_PORT}`);
       startNode();
     });
 }
