@@ -1,4 +1,5 @@
 import fs from "fs";
+import dotenv from "dotenv";
 dotenv.config();
 import crypto from "crypto";
 import net from "net";
@@ -6,8 +7,8 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
 let logs = [];
 
-import dotenv from "dotenv";
-dotenv.config();
+// Banque centrale : un seul node autorisé à forger et mint
+// Tous les autres sont followers (validation + propagation)
 const MASTER_ID = process.env.MASTER_ID || "node1";
 const WEB_PORT = parseInt(process.env.WEB_PORT || "3000");
 const P2P_PORT = parseInt(process.env.P2P_PORT || "5000");
@@ -52,8 +53,10 @@ if (NETWORK_MODE === "docker") {
   peers = peersConfig.peersDocker.filter((id) => id !== nodeID);
 }
 
+// On enlève notre propre adresse IP:PORT pour éviter de se connecter à soi-même
 if (NETWORK_MODE === "ip") {
-  peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(P2P_PORT));
+  //peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(P2P_PORT));
+  peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(":" + P2P_PORT));
 }
 
 log(`>> Peers chargés (${NETWORK_MODE}) : ${JSON.stringify(peers)}`);
@@ -287,6 +290,10 @@ let isSyncing = true;
 B. Transactions (exemple simplifié)
 ════════════════════════════════════════
 */
+
+// ⚠️ L'id n'est pas inclus dans le hash signé.
+// Donc la signature couvre uniquement (from,to,amount,timestamp).
+// C’est OK, mais il faut rester cohérent partout.
 
 function hashTransaction(tx) {
   return crypto
@@ -669,7 +676,6 @@ function handleMessage(msg, socket = null) {
 
       isSyncing = false;
       log(`>> 🟢 Synchronisation terminée et soldes mis à jour`);
-      recalculateBalances();
       break;
     // Réception d’un nouveau bloc
     case "NEW_BLOCK": {
@@ -719,9 +725,7 @@ Donc on doit les retirer du mempool local.
       mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
 
       // Application des transactions du bloc aux soldes
-      for (const tx of block.data.transactions) {
-        applyTransaction(tx, balances);
-      }
+      // for (const tx of block.data.transactions) { applyTransaction(tx, balances);}
 
       log(`>> ➕ Bloc ajouté`);
       break;
@@ -801,6 +805,9 @@ const server = net.createServer((socket) => {
 */
 
 switch (NETWORK_MODE) {
+  // En mode IP, on écoute sur toutes les interfaces réseau
+  // pour permettre aux autres PC du LAN de se connecter
+
   case "docker":
     server.listen(P2P_PORT, () => {
       log(`>> 🟢 Serveur P2P actif sur port ${P2P_PORT}`);
