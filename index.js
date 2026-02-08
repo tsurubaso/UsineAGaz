@@ -11,6 +11,9 @@ dotenv.config();
 const MASTER_ID = process.env.MASTER_ID || "node1";
 const WEB_PORT = process.env.WEB_PORT || 3000;
 
+const NETWORK_MODE = process.env.NETWORK_MODE || "docker";
+
+
 /*
 ════════════════════════════════════════
 0. CONFIGURATION DU NŒUD
@@ -32,8 +35,6 @@ PEERS CONFIG (JSON)
 */
 
 const peersConfig = JSON.parse(fs.readFileSync("./peers.json", "utf-8"));
-
-const NETWORK_MODE = process.env.NETWORK_MODE || "docker";
 
 /*
 ════════════════════════════════════════
@@ -734,29 +735,56 @@ const server = net.createServer((socket) => {
 
 /*
 ════════════════════════════════════════
-8. DÉMARRAGE & SYNCHRO INITIALE
+8. DÉMARRAGE & SYNCHRO INITIALE///////////////////////////////////////////////////////////////////////////////////////
 ════════════════════════════════════════
 */
 
-server.listen(5000, () => {
-  log(`>> 🟢 Serveur actif`);
 
-  // Synchronisation au démarrage
+
+switch (NETWORK_MODE) {
+  case "docker":
+    server.listen(5000, () => {
+      log(`>> 🟢 Serveur P2P actif (Docker) sur port 5000`);
+      startNode();
+      
+    });
+    break;
+
+  case "ip":
+    server.listen(5000, "0.0.0.0", () => {
+      log(`>> 🟢 Serveur P2P actif (IP réel) sur port  5000`);
+      startNode();
+    });
+    break;
+
+  default:
+    server.listen(5000, () => {
+      log(`>> 🟢 Serveur P2P actif (local default) sur port  5000`);
+      startNode();
+    });
+}
+
+function startNode() {
+  // Sync initiale
   setTimeout(() => {
-    log(`>> 🔄 Sync au démarrage`);
+    log(">> 🔄 Sync au démarrage");
     peers.forEach((peer) =>
-      sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
+      sendMessage(peer, { type: "GET_CHAIN", from: nodeID })
     );
   }, 1500);
 
-  // Le master forge un bloc toutes les 20 secondes
-
+  // Bootstrap master
   if (nodeID === MASTER_ID) {
-    setInterval(() => {
-      forgeBlock();
-    }, 20000); // toutes les 20 secondes
+    setTimeout(() => {
+      bootstrapMoney();
+    }, 2000);
+
+    // Forge loop
+    setInterval(() => forgeBlock(), 20000);
   }
-});
+}
+
+
 
 /*
 ════════════════════════════════════════  
@@ -868,6 +896,21 @@ app.post("/tx", (req, res) => {
   res.redirect("/");
 });
 
-app.listen(WEB_PORT, () => {
-  log(`>> 🌍 Dashboard sur http://localhost:${WEB_PORT}`);
-});
+switch (NETWORK_MODE) {
+  case "docker":
+    app.listen(WEB_PORT, "0.0.0.0", () => {
+      log(`>> 🌍 Dashboard Web (Docker) sur http://localhost:${WEB_PORT}`);
+    });
+    break;
+
+  case "ip":
+    app.listen(WEB_PORT, "0.0.0.0", () => {
+      log(`>> 🌍 Dashboard Web (IP) sur http://<TON_IP>:${WEB_PORT}`);
+    });
+    break;
+
+  default:
+    app.listen(WEB_PORT, () => {
+      log(`>> 🌍 Dashboard Web (local) sur http://localhost:${WEB_PORT}`);
+    });
+}

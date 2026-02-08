@@ -1,17 +1,20 @@
-node1:
-  environment:
-    - WEB_PORT=3000
-  ports:
-    - "3001:3000"
+const WEB_PORT = process.env.WEB_PORT || 3000;
 
-node2:
-  environment:
-    - WEB_PORT=3000
-  ports:
-    - "3002:3000"
+switch (NETWORK_MODE) {
+  case "docker":
+    app.listen(WEB_PORT, "0.0.0.0", () => {
+      log(`>> 🌍 Dashboard Web (Docker) sur http://localhost:${WEB_PORT}`);
+    });
+    break;
 
-node3:
-  environment:
-    - WEB_PORT=3000
-  ports:
-    - "3003:3000"
+  case "ip":
+    app.listen(WEB_PORT, "0.0.0.0", () => {
+      log(`>> 🌍 Dashboard Web (IP) sur http://<TON_IP>:${WEB_PORT}`);
+    });
+    break;
+
+  default:
+    app.listen(WEB_PORT, () => {
+      log(`>> 🌍 Dashboard Web (local) sur http://localhost:${WEB_PORT}`);
+    });
+}
