@@ -224,19 +224,19 @@ function bootstrapMoney() {
 
   mempool.push(payNode2);
 
-if(process.env.NODE3_PUBLIC_KEY){
-  const payNode3 = {
-    from: publicKey,
-    to: process.env.NODE3_PUBLIC_KEY,
-    amount: 100,
-    timestamp: Date.now(),
-  };
+  if (process.env.NODE3_PUBLIC_KEY) {
+    const payNode3 = {
+      from: publicKey,
+      to: process.env.NODE3_PUBLIC_KEY,
+      amount: 100,
+      timestamp: Date.now(),
+    };
 
-  payNode3.signature = signTransaction(payNode3, privateKey);
-  payNode3.id = createTransactionId(payNode3);
+    payNode3.signature = signTransaction(payNode3, privateKey);
+    payNode3.id = createTransactionId(payNode3);
 
-  mempool.push(payNode3);
-}
+    mempool.push(payNode3);
+  }
 
   log(`>> ✅ Mint + distribution ajoutés au mempool`);
 
@@ -559,6 +559,23 @@ function chooseBestChain(local, incoming) {
   return local;
 }
 
+function recalculateBalances() {
+  const newBalances = {};
+
+  blockchain.forEach((block) => {
+    if (block.data && block.data.transactions) {
+      block.data.transactions.forEach((tx) => {
+        applyTransaction(tx, newBalances);
+      });
+    }
+  });
+
+  balances = newBalances;
+  log(
+    `>> 💰 Soldes recalculés : ${Object.keys(balances).length} comptes trouvés.`,
+  );
+}
+
 /*
 ════════════════════════════════════════
 5. CLIENT TCP
@@ -618,20 +635,35 @@ function handleMessage(msg, socket = null) {
 
     // Réception d’une blockchain complète
     case "FULL_CHAIN":
-      log(`>> 📥 Chaîne reçue de ${msg.from}`);
+      log(
+        `>> 📥 Chaîne reçue de ${msg.from} (Taille : ${msg.chain.length} blocs)`,
+      );
+
+      if (msg.chain.length > 0) {
+        const firstBlock = msg.chain[0];
+        const lastBlock = msg.chain[msg.chain.length - 1];
+        log(
+          `>> [Vérification] Index 0 hash: ${firstBlock.hash?.slice(0, 10)}...`,
+        );
+        log(
+          `>> [Vérification] Dernier index: ${lastBlock.index} (Hash: ${lastBlock.hash?.slice(0, 10)}...)`,
+        );
+      }
 
       if (!isValidChain(msg.chain)) {
-        log(`>> ❌ Chaîne invalide`);
+        log(`>> ❌ Chaîne invalide ou corrompue !`);
         return;
       }
 
       blockchain = chooseBestChain(blockchain, msg.chain);
+
+      // RECALCUL DES SOLDES après synchro
+      recalculateBalances();
+
       isSyncing = false;
-
-      log(`>> 🟢 Synchronisation terminée`);
-      bootstrapMoney();
+      log(`>> 🟢 Synchronisation terminée et soldes mis à jour`);
+      recalculateBalances();
       break;
-
     // Réception d’un nouveau bloc
     case "NEW_BLOCK": {
       if (isSyncing) return;
@@ -683,6 +715,13 @@ Donc on doit les retirer du mempool local.
 
     case "NEW_TX": {
       const tx = msg.tx;
+      if (!tx) {
+        log(">> ❌ ERREUR : Message NEW_TX reçu sans objet transaction");
+        return;
+      }
+      log(
+        `>> 💸 Tentative TX: From ${tx.from?.slice(0, 8)} To ${tx.to?.slice(0, 8)} Amount: ${tx.amount}`,
+      );
 
       // 1. Vérification cryptographique
       if (!verifyTransaction(tx)) {
@@ -872,6 +911,11 @@ app.post("/tx", (req, res) => {
   if (!to || !amount) {
     log("❌ Erreur: Destinataire ou montant manquant");
     return res.status(400).send("Champs manquants");
+  }
+  const amountInt = parseInt(amount);
+  if (isNaN(amountInt)) {
+    log(">> ❌ Erreur : Le montant n'est pas un nombre valide");
+    return res.redirect("/?error=nan");
   }
 
   const tx = {
