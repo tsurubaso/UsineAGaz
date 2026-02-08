@@ -20,7 +20,7 @@ const NETWORK_MODE = process.env.NETWORK_MODE || "docker";
 0. CONFIGURATION DU NŒUD
 ════════════════════════════════════════
 Chaque conteneur définit NODE_ID
-(node1 = master / node2, node3 = followers)
+(node1 = master / node2, node3 = followers)  
 */
 
 const nodeID = process.env.NODE_ID;
@@ -28,6 +28,11 @@ const privateKey = process.env[`NODE${nodeID.slice(-1)}_PRIVATE_KEY`];
 const publicKey = process.env[`NODE${nodeID.slice(-1)}_PUBLIC_KEY`];
 
 log(`\n--- DÉMARRAGE DU NŒUD ${nodeID} ---`);
+log(`>> MODE = ${NETWORK_MODE}`);
+log(`>> NODE_ID = ${nodeID}`);
+log(`>> P2P_PORT = ${P2P_PORT}`);
+log(`>> WEB_PORT = ${WEB_PORT}`);
+
 
 /*
 ════════════════════════════════════════
@@ -50,7 +55,7 @@ if (NETWORK_MODE === "docker") {
 }
 
 if (NETWORK_MODE === "ip") {
-  peers = peersConfig.peersIP;
+  peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(P2P_PORT));
 }
 
 log(`>> Peers chargés (${NETWORK_MODE}) : ${JSON.stringify(peers)}`);
