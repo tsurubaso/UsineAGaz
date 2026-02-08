@@ -55,8 +55,8 @@ if (NETWORK_MODE === "docker") {
 
 // On enlève notre propre adresse IP:PORT pour éviter de se connecter à soi-même
 if (NETWORK_MODE === "ip") {
-  //peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(P2P_PORT));
-  peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(":" + P2P_PORT));
+  peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(P2P_PORT));
+  //peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(":" + P2P_PORT));
 }
 
 log(`>> Peers chargés (${NETWORK_MODE}) : ${JSON.stringify(peers)}`);
@@ -724,8 +724,8 @@ Donc on doit les retirer du mempool local.
 
       mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
 
-      // Application des transactions du bloc aux soldes
-      // for (const tx of block.data.transactions) { applyTransaction(tx, balances);}
+      // Application des transactions du bloc aux soldes //////////////////////////////////////////////Doublon
+       for (const tx of block.data.transactions) { applyTransaction(tx, balances);}
 
       log(`>> ➕ Bloc ajouté`);
       break;
