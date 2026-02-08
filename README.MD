@@ -1,253 +1,136 @@
 
----
 
-# Bouya‑Bouya Blockchain — Mini‑réseau distribué en Node.js
+# 🪙 Bouya‑Bouya Blockchain 🚀
 
-Bouya‑Bouya est une blockchain pédagogique minimaliste, distribuée sur plusieurs nœuds TCP, avec signatures ECDSA secp256k1, propagation réseau, mempool, forge de blocs et dashboard web intégré.  
-Chaque nœud fonctionne dans un conteneur ou en mode IP, et synchronise sa copie locale de la chaîne.
+### Mini‑réseau distribué P2P en Node.js
 
----
-
-## 🚀 Fonctionnalités principales
-
-- Réseau pair‑à‑pair via TCP (port 5000)
-- Blockchain complète avec :
-  - Genesis signé
-  - Chaînage cryptographique SHA‑256
-  - Validation stricte des blocs
-- Transactions signées (ECDSA secp256k1)
-- Mempool distribué avec anti‑doublons
-- Forge automatique de blocs (master uniquement)
-- Propagation réseau :
-  - `GET_CHAIN`
-  - `FULL_CHAIN`
-  - `NEW_TX`
-  - `NEW_BLOCK`
-- Ledger local recalculé à partir de la chaîne
-- Système de mint contrôlé (master seulement)
-- Dashboard web par nœud (port 300X)
-- Synchronisation automatique au démarrage
+Bouya‑Bouya est une blockchain pédagogique minimaliste et robuste. Elle implémente les concepts fondamentaux d'un registre distribué : signatures **ECDSA**, propagation **P2P**, gestion de **Mempool**, et consensus par **Master-Node**.
 
 ---
 
-## 🧱 Architecture du réseau
+## 🚀 Fonctionnalités Avancées
 
-Le réseau est composé de plusieurs nœuds :
+* **Réseau Hybride** : Support natif du mode `Docker` (noms d'hôtes) et du mode `IP` (réseau local).
+* **Consensus & Forge** :
+* **Master (Node1)** : Responsable de la forge des blocs et de la création monétaire.
+* **Followers (NodeX)** : Validation passive, synchronisation et relais.
 
-- `node1` : **master**
-  - Forge les blocs
-  - Peut créer de la monnaie (mint)
-- `node2`, `node3`, … : **followers**
-  - Reçoivent les blocs
-  - Maintiennent leur mempool
-  - Valident les transactions
 
-Chaque nœud possède :
+* **Sécurité Cryptographique** :
+* Signatures **secp256k1** via `@noble/curves`.
+* Intégrité des blocs par chaînage SHA‑256.
 
-- une clé privée
-- une clé publique
-- un mempool local
-- une copie locale de la blockchain
-- un ledger dérivé de la chaîne
 
----
+* **Mécanismes de Résilience** :
+* **Polling Périodique** : Les nœuds followers interrogent les pairs toutes les 15s pour éviter d'être désynchronisés.
+* **Bootstrap Immédiat** : Forgeage d'un "Bloc #1" instantané au démarrage du Master pour injecter la monnaie.
 
-## 🔐 Cryptographie
 
-### Signatures
-- Courbe : **secp256k1** (via `@noble/curves`)
-- Chaque transaction est signée avec la clé privée de l’émetteur
-- Les blocs sont signés uniquement par le master
-
-### Hashs
-- SHA‑256 pour :
-  - les transactions
-  - les blocs
-  - les identifiants de transaction
+* **Dashboard Interactif** : Interface Web en temps réel pour monitorer la chaîne, le mempool et envoyer des transactions.
 
 ---
 
-## 🔄 Synchronisation réseau
+## 🧱 Architecture Technique
 
-Au démarrage :
+### Structure d'un Bloc
 
-1. Le nœud contacte tous ses pairs via `GET_CHAIN`
-2. Le peer répond avec `FULL_CHAIN`
-3. Le nœud valide la chaîne reçue :
-   - Genesis strict
-   - Hashs
-   - Signatures
-4. La chaîne la plus longue est adoptée
-5. Le master exécute le **bootstrap monétaire** (mint + distribution)
+Chaque bloc contient un en-tête cryptographique et un corps de données :
 
-Pendant la vie du réseau :
+* `index`, `previousHash`, `timestamp`, `hash`
+* `signer` & `signature` (Preuve d'autorité du Master)
+* `data.transactions[]` (Liste des transactions confirmées)
 
-- Les transactions se propagent via `NEW_TX`
-- Les blocs se propagent via `NEW_BLOCK`
-- Le mempool est nettoyé automatiquement lorsque les transactions sont confirmées
+### Le Ledger (Soldes)
+
+Le solde n'est jamais stocké tel quel. Il est **recalculé dynamiquement** à chaque synchronisation ou réception de bloc en "rejouant" l'historique des transactions.
 
 ---
 
-## ⛏️ Forge de blocs (master uniquement)
+## 🔄 Flux de Synchronisation
 
-Toutes les 20 secondes :
+1. **Initial Sync** : Au démarrage, le nœud demande la chaîne complète (`GET_CHAIN`).
+2. **Validation** : Vérification récursive des signatures et de la continuité des hashs.
+3. **Replay** : Calcul des soldes à partir des blocs validés.
+4. **Maintenance** :
+* **Actif** : Réception de `NEW_BLOCK` via propagation.
+* **Passif** : Polling régulier pour rattraper les blocs manqués.
 
-1. Le master prend **tout le mempool**
-2. Crée un bloc :
-   - index
-   - previousHash
-   - timestamp
-   - transactions
-3. Calcule le hash structurel
-4. Signe le bloc
-5. L’ajoute à sa chaîne
-6. Applique les transactions au ledger
-7. Diffuse le bloc aux autres nœuds
 
-Les followers :
-
-- Vérifient le bloc
-- Nettoient leur mempool
-- Appliquent les transactions
 
 ---
 
-## 💸 Transactions
+## 🛠 Installation & Configuration
 
-Format :
+### 1. Prérequis
 
-```json
-{
-  "from": "<publicKey>",
-  "to": "<publicKey>",
-  "amount": 42,
-  "timestamp": 1700000000000,
-  "signature": "<hex>",
-  "id": "<sha256>"
-}
+```bash
+npm install express dotenv @noble/curves @noble/hashes
+
 ```
 
-Validation :
+### 2. Variables d'Environnement (.env)
 
-- Signature ECDSA valide
-- Solde suffisant (sauf mint)
-- Anti‑doublon via `id`
-
-Propagation automatique à tous les peers.
-
----
-
-## 🪙 Mint & Bootstrap monétaire
-
-Uniquement pour `node1`.
-
-Au premier démarrage :
-
-1. Mint de 1000 Bouya pour le master
-2. Distribution automatique :
-   - 100 Bouya → node2
-   - 100 Bouya → node3
-3. Les transactions sont ajoutées au mempool
-4. Elles seront confirmées dans le premier bloc forgé
-
----
-
-## 🌐 Dashboard Web
-
-Chaque nœud expose une interface web :
-
-```
-http://localhost:3001  → node1
-http://localhost:3002  → node2
-http://localhost:3003  → node3
-```
-
-Affiche :
-
-- Nombre de blocs
-- Taille du mempool
-- Soldes
-- Logs récents
-- Formulaire pour créer une transaction
-
----
-
-## ⚙️ Configuration
-
-### Variables d’environnement
-
-```
-NODE_ID=node1
+```ini
+# Identité du nœud
+NODE_ID=node2
 MASTER_ID=node1
-NETWORK_MODE=docker | ip
+NETWORK_MODE=ip
 
+# Ports
+P2P_PORT=5002
+WEB_PORT=3002
+
+# Clés (Hex) - Répéter pour chaque Node
+NODE1_PUBLIC_KEY=04...
 NODE1_PRIVATE_KEY=...
-NODE1_PUBLIC_KEY=...
-NODE2_PRIVATE_KEY=...
-NODE2_PUBLIC_KEY=...
-NODE3_PRIVATE_KEY=...
-NODE3_PUBLIC_KEY=...
+
 ```
 
-### peers.json
+### 3. Fichier des Pairs (peers.json)
+
+Indiquez les adresses IP de vos machines physiques :
 
 ```json
 {
-  "peersDocker": ["node1", "node2", "node3"],
-  "peersIP": ["192.168.0.10:5000", "192.168.0.11:5000"]
+  "peersIP": ["192.168.0.000:5001", "192.168.0.000:5002"]
 }
+
 ```
 
 ---
 
-## ▶️ Lancement
+## ▶️ Utilisation (Mode Local/IP)
 
-### Mode Docker
-Chaque conteneur définit son `NODE_ID`.
+Pour lancer le Master (PC 1) :
 
-### Mode local
-Lancer plusieurs instances :
-
-```
-NODE_ID=node1 node app.js
-NODE_ID=node2 node app.js
-NODE_ID=node3 node app.js
-```
-
----
-
-## 📁 Structure du projet
+```powershell
+$env:NODE_ID="node1"; $env:P2P_PORT="5001"; $env:WEB_PORT="3001"; node index.js
 
 ```
-.
-├── app.js
-├── peers.json
-├── .env
-└── README.md
+
+Pour lancer un Follower (PC 2) :
+
+```powershell
+$env:NODE_ID="node2"; $env:P2P_PORT="5002"; $env:WEB_PORT="3002"; node index.js
+
 ```
 
 ---
 
-## 🧪 Tests manuels
+## 💸 Cycle de vie d'une Transaction
 
-- Créer une transaction via le dashboard
-- Vérifier sa propagation dans les logs
-- Attendre la forge du bloc
-- Vérifier la mise à jour des soldes
-- Vérifier la suppression du mempool
+1. **Émission** : Création via le Dashboard Web.
+2. **Signature** : Signature locale avec la clé privée de l'émetteur.
+3. **Diffusion** : Propagation `NEW_TX` à tous les nœuds connectés.
+4. **Mempool** : Attente dans la réserve des nœuds (vérification du solde).
+5. **Mining** : Inclusion dans le prochain bloc par le Master (toutes les 20s).
+6. **Confirmation** : Réception du `NEW_BLOCK`, mise à jour des balances et nettoyage du mempool.
 
 ---
 
-## 📌 Objectifs pédagogiques
+## 📌 À savoir
 
-Ce projet illustre :
-
-- la logique d’une blockchain distribuée
-- la propagation P2P
-- la validation cryptographique
-- la gestion d’un mempool
-- la forge de blocs
-- la synchronisation de chaînes
-- la gestion d’un ledger dérivé
+* **Mint** : Seul le Master peut émettre des transactions `from: "MINT"`.
+* **Identifiant** : L'`id` d'une transaction est calculé par `SHA-256(from + to + amount + timestamp)`.
 
 ---
