@@ -9,6 +9,7 @@ let logs = [];
 import dotenv from "dotenv";
 dotenv.config();
 const MASTER_ID = process.env.MASTER_ID || "node1";
+const WEB_PORT = process.env.WEB_PORT || 3000;
 
 /*
 ════════════════════════════════════════
@@ -867,6 +868,6 @@ app.post("/tx", (req, res) => {
   res.redirect("/");
 });
 
-app.listen(3000 + parseInt(nodeID.slice(-1)), () => {
-  log(`>> 🌍 Web dashboard sur http://localhost:300${nodeID.slice(-1)}`);
+app.listen(WEB_PORT, () => {
+  log(`>> 🌍 Dashboard sur http://localhost:${WEB_PORT}`);
 });
