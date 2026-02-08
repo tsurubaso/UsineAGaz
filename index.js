@@ -14,7 +14,6 @@ const P2P_PORT = parseInt(process.env.P2P_PORT || "5000");
 
 const NETWORK_MODE = process.env.NETWORK_MODE || "docker";
 
-
 /*
 ════════════════════════════════════════
 0. CONFIGURATION DU NŒUD
@@ -32,7 +31,6 @@ log(`>> MODE = ${NETWORK_MODE}`);
 log(`>> NODE_ID = ${nodeID}`);
 log(`>> P2P_PORT = ${P2P_PORT}`);
 log(`>> WEB_PORT = ${WEB_PORT}`);
-
 
 /*
 ════════════════════════════════════════
@@ -226,6 +224,7 @@ function bootstrapMoney() {
 
   mempool.push(payNode2);
 
+if(process.env.NODE3_PUBLIC_KEY){
   const payNode3 = {
     from: publicKey,
     to: process.env.NODE3_PUBLIC_KEY,
@@ -237,6 +236,7 @@ function bootstrapMoney() {
   payNode3.id = createTransactionId(payNode3);
 
   mempool.push(payNode3);
+}
 
   log(`>> ✅ Mint + distribution ajoutés au mempool`);
 
@@ -745,27 +745,24 @@ const server = net.createServer((socket) => {
 ════════════════════════════════════════
 */
 
-
-
 switch (NETWORK_MODE) {
   case "docker":
     server.listen(P2P_PORT, () => {
-       log(`>> 🟢 Serveur P2P actif sur port ${P2P_PORT}`);
+      log(`>> 🟢 Serveur P2P actif sur port ${P2P_PORT}`);
       startNode();
-      
     });
     break;
 
   case "ip":
     server.listen(P2P_PORT, "0.0.0.0", () => {
-       log(`>> 🟢 Serveur P2P actif sur port ${P2P_PORT}`);
+      log(`>> 🟢 Serveur P2P actif sur port ${P2P_PORT}`);
       startNode();
     });
     break;
 
   default:
     server.listen(P2P_PORT, () => {
-       log(`>> 🟢 Serveur P2P actif sur port ${P2P_PORT}`);
+      log(`>> 🟢 Serveur P2P actif sur port ${P2P_PORT}`);
       startNode();
     });
 }
@@ -775,7 +772,7 @@ function startNode() {
   setTimeout(() => {
     log(">> 🔄 Sync au démarrage");
     peers.forEach((peer) =>
-      sendMessage(peer, { type: "GET_CHAIN", from: nodeID })
+      sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
     );
   }, 1500);
 
@@ -789,8 +786,6 @@ function startNode() {
     setInterval(() => forgeBlock(), 20000);
   }
 }
-
-
 
 /*
 ════════════════════════════════════════  
@@ -870,7 +865,14 @@ ${logs.join("\n")}
 });
 
 app.post("/tx", (req, res) => {
+  console.log(req.body);
   const { to, amount } = req.body;
+
+  // Validation simple pour éviter les crashs
+  if (!to || !amount) {
+    log("❌ Erreur: Destinataire ou montant manquant");
+    return res.status(400).send("Champs manquants");
+  }
 
   const tx = {
     from: publicKey,
@@ -879,11 +881,9 @@ app.post("/tx", (req, res) => {
     timestamp: Date.now(),
   };
 
-  // Signature
-  tx.signature = signTransaction(tx, privateKey);
-
-  // ID canonique
+  // Important: L'ID doit être créé AVANT la signature ou inclus dans le hash
   tx.id = createTransactionId(tx);
+  tx.signature = signTransaction(tx, privateKey);
 
   // Ajout au mempool local
   mempool.push(tx);
