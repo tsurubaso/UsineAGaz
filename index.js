@@ -196,6 +196,11 @@ function bootstrapMoney() {
 
   // Seul node1 a le droit de faire ça
   if (nodeID !== MASTER_ID) return;
+  // SÉCURITÉ : Si aucun mouvement, on ne crée pas de bloc inutile
+  if (mempool.length === 0) {
+    log(`>> ⏸️ Mempool vide, rien à forger`);
+    return;
+  }
 
   log(`>> 🪙 Bootstrapping Bouya-Bouya...`);
 
@@ -239,7 +244,9 @@ function bootstrapMoney() {
   }
 
   log(`>> ✅ Mint + distribution ajoutés au mempool`);
-
+  // FORCE LE PREMIER BLOC IMMÉDIATEMENT
+  log(`>> ⛏️ Forgeage immédiat du bloc de bootstrap...`);
+  forgeBlock();
   bootstrapDone = true;
 }
 
@@ -251,12 +258,16 @@ function applyTransaction(tx, balances) {
   // Cas spécial : création monétaire
   if (isMintTransaction(tx)) {
     balances[tx.to] = (balances[tx.to] || 0) + tx.amount;
+    log(`>> [Balance] MINT de ${tx.amount} pour ${tx.to.slice(0, 10)}...`);
     return;
   }
 
   // Cas normal : transfert
   balances[tx.from] = (balances[tx.from] || 0) - tx.amount;
   balances[tx.to] = (balances[tx.to] || 0) + tx.amount;
+  log(
+    `>> [Balance] Transfert: ${tx.from.slice(0, 10)}... -> ${tx.to.slice(0, 10)}... (${tx.amount})`,
+  );
 }
 
 /*
@@ -688,6 +699,15 @@ function handleMessage(msg, socket = null) {
       // les transactions incluses dans ce bloc
 
       blockchain.push(block);
+
+      // CRUCIAL : Mettre à jour les soldes avec les transactions du nouveau bloc
+      if (block.data && block.data.transactions) {
+        block.data.transactions.forEach((tx) => {
+          applyTransaction(tx, balances);
+        });
+        log(`>> 💰 Soldes mis à jour après le bloc #${block.index}`);
+      }
+
       /*
 ═══════════════════════════════════════
 NETTOYAGE DU MEMPOOL (FOLLOWERS)
@@ -823,6 +843,16 @@ function startNode() {
 
     // Forge loop
     setInterval(() => forgeBlock(), 20000);
+    // Dans startNode()
+    if (nodeID !== MASTER_ID) {
+      // Toutes les 15 secondes, on vérifie si on est à jour
+      setInterval(() => {
+        log(">> 🔍 Vérification périodique de la chaîne...");
+        peers.forEach((peer) =>
+          sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
+        );
+      }, 15000);
+    }
   }
 }
 
