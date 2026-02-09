@@ -68,7 +68,9 @@ log(`>> Peers chargés (${NETWORK_MODE}) : ${JSON.stringify(peers)}`);
 Chaque nœud possède sa copie locale
 de la blockchain.
 */
-
+//ancien etat de la blockchain
+//Elle etait creee vide au demarrage
+//maintenant elle sera chargee depuis le disque si le fichier existe
 let blockchain = [];
 
 /*
@@ -179,6 +181,9 @@ TRANSACTION SPÉCIALE : MINT
 - Utilisée uniquement dans le Genesis (pour l’instant)
 */
 
+
+
+
 function isMintTransaction(tx) {
   return tx.from === "MINT";
 }
@@ -195,11 +200,20 @@ BOOTSTRAP MONÉTAIRE
 let bootstrapDone = false;
 
 function bootstrapMoney() {
+  
   if (bootstrapDone) return;
 
   // Seul node1 a le droit de faire ça
   if (nodeID !== MASTER_ID) return;
   // SÉCURITÉ : Si aucun mouvement, on ne crée pas de bloc inutile
+
+   // ✅ Ne jamais remint si déjà fait
+  // ✅ Si déjà bootstrappé → stop
+  if (fs.existsSync("./data/bootstrap_done.flag")) {
+    log(">> ⚠️ Bootstrap déjà fait → aucun mint");
+    bootstrapDone = true;
+    return;
+  }
 
   log(`>> 🪙 Bootstrapping Bouya-Bouya...`);
 
@@ -215,38 +229,15 @@ function bootstrapMoney() {
   mintTx.id = createTransactionId(mintTx);
   mempool.push(mintTx);
 
-  // 2) Distribution immédiate
-  const payNode2 = {
-    from: publicKey,
-    to: process.env.NODE2_PUBLIC_KEY,
-    amount: 100,
-    timestamp: Date.now(),
-  };
-
-  payNode2.signature = signTransaction(payNode2, privateKey);
-  payNode2.id = createTransactionId(payNode2);
-
-  mempool.push(payNode2);
-
-  if (process.env.NODE3_PUBLIC_KEY) {
-    const payNode3 = {
-      from: publicKey,
-      to: process.env.NODE3_PUBLIC_KEY,
-      amount: 100,
-      timestamp: Date.now(),
-    };
-
-    payNode3.signature = signTransaction(payNode3, privateKey);
-    payNode3.id = createTransactionId(payNode3);
-
-    mempool.push(payNode3);
-  }
-
-  log(`>> ✅ Mint + distribution ajoutés au mempool (${mempool.length} tx`);
+  log(`>> ✅ Mint ajouté au mempool (${mempool.length} tx`);
   // FORCE LE PREMIER BLOC IMMÉDIATEMENT
   log(`>> ⛏️ Forgeage immédiat du bloc de bootstrap...`);
   forgeBlock();
   bootstrapDone = true;
+
+    // ✅ Marqueur permanent
+  fs.writeFileSync("./data/bootstrap_done.flag", "done");
+  
 }
 
 /*
@@ -337,6 +328,17 @@ Le master :
 - le signe
 */
 
+function saveBlockchain() {
+  if (nodeID !== MASTER_ID) return; // seuls les masters sauvegardent
+
+  fs.writeFileSync(
+    "./data/master_chain.json",
+    JSON.stringify(blockchain, null, 2),
+  );
+
+  log(">> 💾 Blockchain sauvegardée (master only)");
+}
+
 function forgeBlock() {
   // Sécurité : seul le master forge
   if (nodeID !== MASTER_ID) return;
@@ -374,6 +376,9 @@ function forgeBlock() {
   block.signer = publicKey;
   // Ajout local
   blockchain.push(block);
+
+  // sauvegarde immédiate
+  saveBlockchain();
 
   // Application aux soldes
   for (const tx of block.data.transactions) {
@@ -509,12 +514,21 @@ function createGenesisBlock() {
 
 // Le master crée et signe le Genesis
 if (nodeID === MASTER_ID) {
-  const genesis = createGenesisBlock();
-  genesis.signature = signBlock(genesis, privateKey);
-  genesis.signer = publicKey;
+  if (!fs.existsSync("./data")) {
+    fs.mkdirSync("./data");
+  }
 
-  blockchain.push(genesis);
-  log(`>> 🧱 Genesis créé`);
+  if (fs.existsSync("./data/master_chain.json")) {
+    blockchain = JSON.parse(fs.readFileSync("./data/master_chain.json"));
+    log(">> 📂 Blockchain master rechargée depuis disque");
+  } else {
+    const genesis = createGenesisBlock();
+    genesis.signature = signBlock(genesis, privateKey);
+    genesis.signer = publicKey;
+
+    blockchain.push(genesis);
+    log(">> 🧱 Genesis créé");
+  }
 } else {
   // Les autres nœuds attendent la synchro réseau
   log(`>> ⏳ En attente de synchronisation`);
@@ -725,7 +739,7 @@ Donc on doit les retirer du mempool local.
       mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
 
       // Application des transactions du bloc aux soldes //////////////////////////////////////////////Doublon
-       for (const tx of block.data.transactions) { applyTransaction(tx, balances);}
+      // for (const tx of block.data.transactions) { applyTransaction(tx, balances);}
 
       log(`>> ➕ Bloc ajouté`);
       break;

@@ -11,6 +11,8 @@ services:
     ports:
       - "5001:5000"
       - "3001:3000"
+    volumes:
+      - ./data-node1:/app/data
 
   node2:
     build: .
