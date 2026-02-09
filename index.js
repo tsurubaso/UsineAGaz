@@ -181,9 +181,6 @@ TRANSACTION SPÉCIALE : MINT
 - Utilisée uniquement dans le Genesis (pour l’instant)
 */
 
-
-
-
 function isMintTransaction(tx) {
   return tx.from === "MINT";
 }
@@ -200,14 +197,13 @@ BOOTSTRAP MONÉTAIRE
 let bootstrapDone = false;
 
 function bootstrapMoney() {
-  
   if (bootstrapDone) return;
 
   // Seul node1 a le droit de faire ça
   if (nodeID !== MASTER_ID) return;
   // SÉCURITÉ : Si aucun mouvement, on ne crée pas de bloc inutile
 
-   // ✅ Ne jamais remint si déjà fait
+  // ✅ Ne jamais remint si déjà fait
   // ✅ Si déjà bootstrappé → stop
   if (fs.existsSync("./data/bootstrap_done.flag")) {
     log(">> ⚠️ Bootstrap déjà fait → aucun mint");
@@ -235,9 +231,8 @@ function bootstrapMoney() {
   forgeBlock();
   bootstrapDone = true;
 
-    // ✅ Marqueur permanent
+  // ✅ Marqueur permanent
   fs.writeFileSync("./data/bootstrap_done.flag", "done");
-  
 }
 
 /*
@@ -521,6 +516,10 @@ if (nodeID === MASTER_ID) {
   if (fs.existsSync("./data/master_chain.json")) {
     blockchain = JSON.parse(fs.readFileSync("./data/master_chain.json"));
     log(">> 📂 Blockchain master rechargée depuis disque");
+    // ✅ Soldes reconstruits
+    recalculateBalances();
+    // ✅ Master prêt
+    isSyncing = false;
   } else {
     const genesis = createGenesisBlock();
     genesis.signature = signBlock(genesis, privateKey);
@@ -528,6 +527,10 @@ if (nodeID === MASTER_ID) {
 
     blockchain.push(genesis);
     log(">> 🧱 Genesis créé");
+
+    // ✅ Init balances
+    recalculateBalances();
+    isSyncing = false;
   }
 } else {
   // Les autres nœuds attendent la synchro réseau
