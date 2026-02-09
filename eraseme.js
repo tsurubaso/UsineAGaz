@@ -1,27 +1,13 @@
-if (nodeID === MASTER_ID) {
-  if (!fs.existsSync("./data")) {
-    fs.mkdirSync("./data");
-  }
+case "GET_CHAIN":
+  log(">> 📤 Envoi FULL_CHAIN au peer");
 
-  if (fs.existsSync("./data/master_chain.json")) {
-    blockchain = JSON.parse(fs.readFileSync("./data/master_chain.json"));
-    log(">> 📂 Blockchain master rechargée depuis disque");
+  socket.write(
+    JSON.stringify({
+      type: "FULL_CHAIN",
+      from: nodeID,
+      chain: blockchain,
+    })
+  );
 
-    // ✅ Soldes reconstruits
-    recalculateBalances();
-
-    // ✅ Master prêt
-    isSyncing = false;
-  } else {
-    const genesis = createGenesisBlock();
-    genesis.signature = signBlock(genesis, privateKey);
-    genesis.signer = publicKey;
-
-    blockchain.push(genesis);
-    log(">> 🧱 Genesis créé");
-
-    // ✅ Init balances
-    recalculateBalances();
-    isSyncing = false;
-  }
-}
+  socket.end(); // ✅ IMPORTANT
+  break;

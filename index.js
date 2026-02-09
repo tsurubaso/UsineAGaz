@@ -662,6 +662,7 @@ function handleMessage(msg, socket = null) {
           chain: blockchain,
         }),
       );
+      socket.end(); // ✅ IMPORTANT
       break;
 
     // Réception d’une blockchain complète
