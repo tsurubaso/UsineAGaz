@@ -640,6 +640,12 @@ function sendMessage(target, message) {
   client.on("error", () => {});
 }
 
+function txAlreadyInChain(txid) {
+  return blockchain.some((b) =>
+    b.data?.transactions?.some((t) => t.id === txid),
+  );
+}
+
 /*
 ════════════════════════════════════════
 6. ROUTEUR DE MESSAGES
@@ -664,6 +670,76 @@ function handleMessage(msg, socket = null) {
       );
       socket.end(); // ✅ IMPORTANT
       break;
+    // Demande partielle : "Donne-moi les blocs après un index"
+    case "GET_BLOCKS_FROM": {
+      if (!blockchain.length) return;
+
+      const startIndex = msg.index + 1;
+
+      log(`>> 📤 GET_BLOCKS_FROM reçu → envoi blocs depuis #${startIndex}`);
+
+      const missingBlocks = blockchain.slice(startIndex);
+
+      socket.write(
+        JSON.stringify({
+          type: "BLOCKS",
+          from: nodeID,
+          blocks: missingBlocks,
+        }),
+      );
+
+      socket.end();
+      break;
+    }
+
+    // Réception d’une liste de blocs manquants
+    case "BLOCKS": {
+      log(`>> 📥 ${msg.blocks.length} blocs reçus (sync incrémental)`);
+
+      for (const block of msg.blocks) {
+        const last = blockchain[blockchain.length - 1];
+
+        // Vérification chaînage
+        if (block.previousHash !== last.hash) {
+          log(">> ❌ Chaîne cassée → resync FULL_CHAIN nécessaire");
+          return;
+        }
+
+        // Vérification hash
+        const hash = calculateHash(
+          block.index,
+          block.previousHash,
+          block.timestamp,
+          block.data,
+        );
+
+        if (hash !== block.hash) {
+          log(">> ❌ Hash invalide → bloc rejeté");
+          return;
+        }
+
+        // Vérification Proof of Authority
+        if (!verifyBlockSignature(block)) {
+          log(">> ❌ Bloc rejeté : signature non autorisée");
+          return;
+        }
+
+        // Ajout bloc
+        blockchain.push(block);
+
+        // Application des transactions
+        if (block.data?.transactions) {
+          block.data.transactions.forEach((tx) =>
+            applyTransaction(tx, balances),
+          );
+        }
+
+        log(`>> ✅ Bloc #${block.index} ajouté via rattrapage`);
+      }
+
+      log(">> 🟢 Sync incrémental terminé");
+      break;
+    }
 
     // Réception d’une blockchain complète
     case "FULL_CHAIN":
@@ -701,6 +777,32 @@ function handleMessage(msg, socket = null) {
 
       const block = msg.block;
       const last = blockchain[blockchain.length - 1];
+      if (!last) return;
+
+
+      // 🚨 Bloc en avance → il manque un maillon
+      if (block.index > last.index + 1) {
+        log(
+          `>> ⚠️ Bloc reçu trop loin (#${block.index}), je suis à #${last.index}`,
+        );
+
+        // Demande des blocs manquants
+        peers.forEach((peer) =>
+          sendMessage(peer, {
+            type: "GET_BLOCKS_FROM",
+            from: nodeID,
+            index: last.index,
+          }),
+        );
+
+        return;
+      }
+
+      // Bloc déjà connu ou trop vieux
+      if (block.index <= last.index) return;
+
+      // Bloc normal attendu
+      if (block.previousHash !== last.hash) return;
 
       if (block.index !== last.index + 1 || block.previousHash !== last.hash)
         return;
@@ -753,6 +855,7 @@ Donc on doit les retirer du mempool local.
 
     case "NEW_TX": {
       const tx = msg.tx;
+      if (txAlreadyInChain(tx.id)) return;
       if (!tx) {
         log(">> ❌ ERREUR : Message NEW_TX reçu sans objet transaction");
         return;
@@ -864,11 +967,19 @@ function startNode() {
   } else {
     // Logique Follower (Polling) - Sorti du bloc Master
     setInterval(() => {
-      log(">> 🔍 Vérification périodique de la chaîne...");
+      log(">> 🔍 Check incrémental...");
+      const lastIndex = blockchain.length
+        ? blockchain[blockchain.length - 1].index
+        : 0;
+
       peers.forEach((peer) =>
-        sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
+        sendMessage(peer, {
+          type: "GET_BLOCKS_FROM",
+          from: nodeID,
+          index: lastIndex,
+        }),
       );
-    }, 15000);
+    }, 5000);
   }
 }
 
@@ -970,6 +1081,11 @@ app.post("/tx", (req, res) => {
     amount: parseInt(amount),
     timestamp: Date.now(),
   };
+
+  if (!isMintTransaction(tx) && tx.amount <= 0) {
+    log(">> ❌ Tentative applyTransaction avec montant invalide");
+    return;
+  }
 
   // Important: L'ID doit être créé AVANT la signature ou inclus dans le hash
   tx.id = createTransactionId(tx);
