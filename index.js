@@ -993,72 +993,211 @@ import express from "express";
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-app.get("/", (req, res) => {
-  res.send(`
-       <html>
-      <head>
-        <title>${nodeID} Dashboard</title>
-        <style>
-          body { font-family: sans-serif; padding: 2px; }
-          h1 { color: darkblue; }
-          .box { padding: 1px; margin: 1px 0; border: 1px solid #ccc; }
-          pre {
-  background: black;
-  color: lime;
-  padding: 2px;
-  font-size: 16px;
-  height: 200px;
-  overflow-y: scroll;
-  line-height: 1.8; /* ← espace entre les lignes */
+
+
+
+
+function renderNodeAddress() {
+  return `
+    <div class="addr">
+      <p><b>Adresse du node :</b></p>
+      <code>${publicKey}</code>
+    </div>
+  `;
 }
 
-        </style>
-      </head>
-      <body>
-        <h3>📡 Node ${nodeID}</h3>
+function renderLastBlocks(limit = 5) {
+  const recent = blockchain.slice(-limit).reverse();
+
+  return `
+    <ul>
+      ${recent
+        .map(
+          (b) => `
+        <li>
+          <b>#${b.index}</b>
+          — Hash: ${b.hash.slice(0, 12)}...
+        </li>
+      `,
+        )
+        .join("")}
+    </ul>
+  `;
+}
+
+function renderLastTransactions(limit = 5) {
+  let allTx = [];
+
+  blockchain.forEach((block) => {
+    if (block.data?.transactions) {
+      allTx.push(...block.data.transactions);
+    }
+  });
+
+  const recentTx = allTx.slice(-limit).reverse();
+
+  if (recentTx.length === 0) {
+    return "<p>Aucune transaction confirmée.</p>";
+  }
+
+  return `
+    <ul>
+      ${recentTx
+        .map(
+          (tx) => `
+        <li>
+          ${tx.amount} Bouya —
+          <span>${tx.from === "MINT" ? "🪙 MINT" : tx.from.slice(0, 6) + "..."}</span>
+          →
+          <span>${tx.to.slice(0, 6)}...</span>
+        </li>
+      `,
+        )
+        .join("")}
+    </ul>
+  `;
+}
+
+
+app.get("/", (req, res) => {
+  res.send(`
+  <html>
+    <head>
+      <title>${nodeID} Dashboard</title>
+      <style>
+        body {
+          font-family: system-ui;
+          padding: 20px;
+          background: #f7f7f7;
+        }
+
+        h2 {
+          margin-bottom: 10px;
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 15px;
+        }
+
+        .box {
+          background: white;
+          padding: 15px;
+          border-radius: 12px;
+          border: 1px solid #ddd;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        }
+
+        code {
+          display: block;
+          background: #111;
+          color: lime;
+          padding: 10px;
+          border-radius: 8px;
+          font-size: 12px;
+          overflow-x: auto;
+        }
+
+        ul {
+          padding-left: 18px;
+        }
+
+        li {
+          margin: 4px 0;
+        }
+
+        button {
+          padding: 10px;
+          width: 100%;
+          border: none;
+          border-radius: 10px;
+          background: darkblue;
+          color: white;
+          font-weight: bold;
+          cursor: pointer;
+        }
+
+        button:hover {
+          opacity: 0.9;
+        }
+
+        textarea, input {
+          width: 100%;
+          padding: 8px;
+          border-radius: 8px;
+          border: 1px solid #ccc;
+        }
+
+        pre {
+          background: black;
+          color: lime;
+          padding: 10px;
+          font-size: 13px;
+          height: 180px;
+          overflow-y: scroll;
+          border-radius: 10px;
+        }
+      </style>
+    </head>
+
+    <body>
+      <h2>📡 Node Dashboard — ${nodeID}</h2>
+
+      <div class="box">
+        ${renderNodeAddress()}
+      </div>
+
+      <div class="grid">
 
         <div class="box">
-          <h3>Blockchain</h3>
-          <p>Nombre de blocs : ${blockchain.length}</p>
+          <h3>⛓ Blockchain</h3>
+          <p><b>Blocs :</b> ${blockchain.length}</p>
+          <h4>Derniers blocs :</h4>
+          ${renderLastBlocks()}
         </div>
 
         <div class="box">
-          <h3>Mempool</h3>
+          <h3>💰 Balances</h3>
+          ${renderBalances()}
+        </div>
+
+        <div class="box">
+          <h3>📜 Transactions confirmées</h3>
+          ${renderLastTransactions()}
+        </div>
+
+        <div class="box">
+          <h3>📥 Mempool</h3>
           <p>Transactions en attente : ${mempool.length}</p>
         </div>
 
         <div class="box">
-          <h3>Balances</h3>
-          ${renderBalances()}
+          <h3>💸 Envoyer une transaction</h3>
+
+          <form method="POST" action="/tx">
+            <p>To (public key)</p>
+            <textarea name="to" rows="2"></textarea>
+
+            <p>Amount</p>
+            <input name="amount" type="number" />
+
+            <br><br>
+            <button type="submit">Envoyer 💸</button>
+          </form>
         </div>
-        <div class="box">
-  <h3>Créer une transaction</h3>
-
-  <form method="POST" action="/tx">
-    <p>To (public key)</p>
-    <textarea name="to" rows="2" style="width:100%;"></textarea>
-
-    <p>Amount</p>
-    <input name="amount" type="number" style="width:100%;" />
-
-    <br><br>
-    <button type="submit">💸 Envoyer</button>
-  </form>
-</div>
-
 
         <div class="box">
-  <h3>Logs récents</h3>
-  <pre>
-${logs.join("\n")}
-  </pre>
-</div>
+          <h3>🖥 Logs récents</h3>
+          <pre>${logs.join("\n")}</pre>
+        </div>
 
-
-      </body>
-    </html>
+      </div>
+    </body>
+  </html>
   `);
 });
+
 
 app.post("/tx", (req, res) => {
   console.log(req.body);
