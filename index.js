@@ -55,7 +55,7 @@ if (NETWORK_MODE === "docker") {
 
 // On enlève notre propre adresse IP:PORT pour éviter de se connecter à soi-même
 if (NETWORK_MODE === "ip") {
-  peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(P2P_PORT));
+  peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(":" + P2P_PORT));
   //peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(":" + P2P_PORT));
 }
 
@@ -223,16 +223,26 @@ function bootstrapMoney() {
   };
 
   mintTx.id = createTransactionId(mintTx);
+  log("BOOTSTRAP START");
+
+  log("Blockchain length = " + blockchain.length);
+  log("Mempool length before = " + mempool.length);
   mempool.push(mintTx);
+  log("Mempool length after = " + mempool.length);
 
   log(`>> ✅ Mint ajouté au mempool (${mempool.length} tx`);
   // FORCE LE PREMIER BLOC IMMÉDIATEMENT
   log(`>> ⛏️ Forgeage immédiat du bloc de bootstrap...`);
   forgeBlock();
+  log("ForgeBlock called");
   bootstrapDone = true;
 
   // ✅ Marqueur permanent
-  fs.writeFileSync("./data/bootstrap_done.flag", "done");
+
+  if (blockchain.length > 1) {
+    fs.writeFileSync("./data/bootstrap_done.flag", "done");
+    log("✅ Bootstrap terminé avec succès");
+  }
 }
 
 /*
@@ -324,14 +334,12 @@ Le master :
 */
 
 function saveBlockchain() {
-  if (nodeID !== MASTER_ID) return; // seuls les masters sauvegardent
-
   fs.writeFileSync(
     "./data/master_chain.json",
     JSON.stringify(blockchain, null, 2),
   );
 
-  log(">> 💾 Blockchain sauvegardée (master only)");
+  log(">> 💾 Blockchain sauvegardée ");
 }
 
 function forgeBlock() {
@@ -344,6 +352,18 @@ function forgeBlock() {
     return;
   }
   log(`>> ⛏️ Forgeage en cours...`); // Ajoute ce log pour voir si ça entre ici
+
+  log("FORGEBLOCK ENTERED");
+
+  log("nodeID=" + nodeID);
+  log("MASTER_ID=" + MASTER_ID);
+  log("mempool=" + mempool.length);
+  log("blockchain=" + blockchain.length);
+
+  if (!lastBlock) {
+    log("❌ Aucun bloc Genesis présent → forge impossible");
+    return;
+  }
   const lastBlock = blockchain[blockchain.length - 1];
 
   // On prend TOUT le mempool (simple et volontaire)
@@ -630,6 +650,7 @@ function sendMessage(target, message) {
   });
 
   client.on("data", (data) => {
+    log(`>> 📤 data traitées au ${host}:${port}`);
     try {
       const msg = JSON.parse(data.toString());
       handleMessage(msg);
@@ -637,7 +658,9 @@ function sendMessage(target, message) {
     client.end();
   });
 
-  client.on("error", () => {});
+  client.on("error", (err) => {
+    log(`>> ❌ Erreur TCP vers ${host}:${port} : ${err.message}`);
+  });
 }
 
 function txAlreadyInChain(txid) {
@@ -779,7 +802,6 @@ function handleMessage(msg, socket = null) {
       const last = blockchain[blockchain.length - 1];
       if (!last) return;
 
-
       // 🚨 Bloc en avance → il manque un maillon
       if (block.index > last.index + 1) {
         log(
@@ -909,13 +931,20 @@ Donc on doit les retirer du mempool local.
 7. SERVEUR TCP
 ════════════════════════════════════════
 */
-
+let connectionCount = 0;
 const server = net.createServer((socket) => {
+  connectionCount++;
+  log(`🔌 Nouvelle connexion (#${connectionCount})`);
   socket.on("data", (data) => {
+    console.log("📩 RAW reçu:", data[0].timestamp.toString());
     try {
       const msg = JSON.parse(data.toString());
       handleMessage(msg, socket);
     } catch {}
+  });
+
+  socket.on("end", () => {
+    connectionCount--;
   });
 });
 
@@ -993,10 +1022,6 @@ import express from "express";
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-
-
-
-
 function renderNodeAddress() {
   return `
     <div class="addr">
@@ -1058,146 +1083,300 @@ function renderLastTransactions(limit = 5) {
   `;
 }
 
+function getWalletActivity() {
+  let stats = {};
+
+  blockchain.forEach((block) => {
+    block.data?.transactions?.forEach((tx) => {
+      if (tx.from !== "MINT") {
+        stats[tx.from] = (stats[tx.from] || 0) + 1;
+      }
+      stats[tx.to] = (stats[tx.to] || 0) + 1;
+    });
+  });
+
+  return stats;
+}
+
+function getWealthDistribution() {
+  const total = Object.values(balances).reduce((a, b) => a + b, 0);
+
+  return Object.entries(balances).map(([addr, amount]) => {
+    return {
+      wallet: addr.slice(0, 8),
+      percent: ((amount / total) * 100).toFixed(1),
+    };
+  });
+}
+function getWealthChartData() {
+  const entries = Object.entries(balances);
+
+  if (entries.length === 0) {
+    return { labels: [], values: [] };
+  }
+
+  const total = entries.reduce((sum, [_, amount]) => sum + amount, 0);
+
+  const labels = entries.map(([addr]) => addr.slice(0, 6) + "...");
+  const values = entries.map(([_, amount]) =>
+    ((amount / total) * 100).toFixed(1),
+  );
+
+  return { labels, values };
+}
+
+function getSpendingRate(wallet) {
+  let spending = {};
+
+  blockchain.forEach((block) => {
+    block.data?.transactions?.forEach((tx) => {
+      if (tx.from === wallet) {
+        const day = new Date(tx.timestamp).toISOString().slice(0, 10);
+        spending[day] = (spending[day] || 0) + tx.amount;
+      }
+    });
+  });
+
+  return spending;
+}
+
+function getSpendingChartData(wallet) {
+  let spendingPerDay = {};
+
+  blockchain.forEach((block) => {
+    block.data?.transactions?.forEach((tx) => {
+      if (tx.from === wallet && tx.from !== "MINT") {
+        // Jour lisible
+        const day = new Date(tx.timestamp).toISOString().slice(0, 10);
+
+        spendingPerDay[day] = (spendingPerDay[day] || 0) + tx.amount;
+      }
+    });
+  });
+
+  // Trier les jours dans l’ordre chronologique
+  const days = Object.keys(spendingPerDay).sort(
+    (a, b) => new Date(a) - new Date(b),
+  );
+
+  const amounts = days.map((d) => spendingPerDay[d]);
+
+  return { days, amounts };
+}
+
+function getGlobalSpendingChartData() {
+  let spendingPerDay = {};
+
+  blockchain.forEach((block) => {
+    block.data?.transactions?.forEach((tx) => {
+      if (tx.from !== "MINT") {
+        const day = new Date(tx.timestamp).toISOString().slice(0, 10);
+        spendingPerDay[day] = (spendingPerDay[day] || 0) + tx.amount;
+      }
+    });
+  });
+
+  const days = Object.keys(spendingPerDay).sort(
+    (a, b) => new Date(a) - new Date(b),
+  );
+
+  const amounts = days.map((d) => spendingPerDay[d]);
+
+  return { days, amounts };
+}
 
 app.get("/", (req, res) => {
+  const wealth = getWealthChartData();
+  const stats = getWalletActivity();
+  const spending = getSpendingChartData(publicKey);
+  const spendingGlobal = getGlobalSpendingChartData();
   res.send(`
-  <html>
-    <head>
+    <html>
+   <head>
       <title>${nodeID} Dashboard</title>
       <style>
-        body {
-          font-family: system-ui;
-          padding: 20px;
-          background: #f7f7f7;
-        }
-
-        h2 {
-          margin-bottom: 10px;
-        }
-
-        .grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 15px;
-        }
-
-        .box {
-          background: white;
-          padding: 15px;
-          border-radius: 12px;
-          border: 1px solid #ddd;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.05);
-        }
-
-        code {
-          display: block;
-          background: #111;
-          color: lime;
-          padding: 10px;
-          border-radius: 8px;
-          font-size: 12px;
-          overflow-x: auto;
-        }
-
-        ul {
-          padding-left: 18px;
-        }
-
-        li {
-          margin: 4px 0;
-        }
-
-        button {
-          padding: 10px;
-          width: 100%;
-          border: none;
-          border-radius: 10px;
-          background: darkblue;
-          color: white;
-          font-weight: bold;
-          cursor: pointer;
-        }
-
-        button:hover {
-          opacity: 0.9;
-        }
-
-        textarea, input {
-          width: 100%;
-          padding: 8px;
-          border-radius: 8px;
-          border: 1px solid #ccc;
-        }
-
-        pre {
-          background: black;
-          color: lime;
-          padding: 10px;
-          font-size: 13px;
-          height: 180px;
-          overflow-y: scroll;
-          border-radius: 10px;
-        }
+         body {
+         font-family: system-ui;
+         padding: 20px;
+         background: #f7f7f7;
+         }
+         h2 {
+         margin-bottom: 10px;
+         }
+         .grid {
+         display: grid;
+         grid-template-columns: 1fr 1fr;
+         gap: 15px;
+         }
+         .box {
+         background: white;
+         padding: 15px;
+         border-radius: 12px;
+         border: 1px solid #ddd;
+         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+         }
+         code {
+         display: block;
+         background: #111;
+         color: lime;
+         padding: 10px;
+         border-radius: 8px;
+         font-size: 12px;
+         overflow-x: auto;
+         }
+         ul {
+         padding-left: 18px;
+         }
+         li {
+         margin: 4px 0;
+         }
+         button {
+         padding: 10px;
+         width: 100%;
+         border: none;
+         border-radius: 10px;
+         background: darkblue;
+         color: white;
+         font-weight: bold;
+         cursor: pointer;
+         }
+         button:hover {
+         opacity: 0.9;
+         }
+         textarea,
+         input {
+         width: 100%;
+         padding: 8px;
+         border-radius: 8px;
+         border: 1px solid #ccc;
+         }
+         pre {
+         background: black;
+         color: lime;
+         padding: 10px;
+         font-size: 13px;
+         height: 180px;
+         overflow-y: scroll;
+         border-radius: 10px;
+         }
+         canvas {
+         width: 100% !important;
+         max-height: 250px;
+         }
       </style>
-    </head>
-
-    <body>
+      <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+   </head>
+   <body>
       <h2>📡 Node Dashboard — ${nodeID}</h2>
-
-      <div class="box">
-        ${renderNodeAddress()}
-      </div>
-
+      <div class="box">${renderNodeAddress()}</div>
       <div class="grid">
-
-        <div class="box">
-          <h3>⛓ Blockchain</h3>
-          <p><b>Blocs :</b> ${blockchain.length}</p>
-          <h4>Derniers blocs :</h4>
-          ${renderLastBlocks()}
-        </div>
-
-        <div class="box">
-          <h3>💰 Balances</h3>
-          ${renderBalances()}
-        </div>
-
-        <div class="box">
-          <h3>📜 Transactions confirmées</h3>
-          ${renderLastTransactions()}
-        </div>
-
-        <div class="box">
-          <h3>📥 Mempool</h3>
-          <p>Transactions en attente : ${mempool.length}</p>
-        </div>
-
-        <div class="box">
-          <h3>💸 Envoyer une transaction</h3>
-
-          <form method="POST" action="/tx">
+      <div class="box">
+         <h3>⛓ Blockchain</h3>
+         <p><b>Blocs :</b> ${blockchain.length}</p>
+         <h4>Derniers blocs :</h4>
+         ${renderLastBlocks()}
+      </div>
+      <div class="box">
+         <h3>💰 Balances</h3>
+         ${renderBalances()}
+      </div>
+      <div class="box">
+         <h3>📜 Transactions confirmées</h3>
+         ${renderLastTransactions()}
+      </div>
+      <div class="box">
+         <h3>📥 Mempool</h3>
+         <p>Transactions en attente : ${mempool.length}</p>
+      </div>
+      <div class="box">
+         <h3>💸 Envoyer une transaction</h3>
+         <form method="POST" action="/tx">
             <p>To (public key)</p>
             <textarea name="to" rows="2"></textarea>
-
             <p>Amount</p>
             <input name="amount" type="number" />
-
-            <br><br>
+            <br /><br />
             <button type="submit">Envoyer 💸</button>
-          </form>
-        </div>
-
-        <div class="box">
-          <h3>🖥 Logs récents</h3>
-          <pre>${logs.join("\n")}</pre>
-        </div>
-
+         </form>
       </div>
-    </body>
-  </html>
-  `);
+      <div class="box">
+         <h3>🖥 Logs récents</h3>
+         <pre>${logs.join("\n")}</pre>
+      </div>
+      <div class="box">
+         <p><b>Connexions actives :</b> ${connectionCount}</p>
+      </div>
+      <div class="box">
+         <ul>
+            ${Object.entries(stats)
+            .map(([wallet, count]) => `
+            <li>${wallet.slice(0,6)}... : ${count} tx</li>
+            `)
+            .join("")}
+         </ul>
+      </div>
+      <div class="box">
+         <h3>🥧 Répartition des richesses</h3>
+         <canvas id="pieChart"></canvas>
+         <script>
+               const pieLabels = ${JSON.stringify(wealth.labels)};
+               const pieValues = ${JSON.stringify(wealth.values)};
+            
+               new Chart(document.getElementById("pieChart"), {
+                 type: "pie",
+                 data: {
+                   labels: pieLabels,
+                   datasets: [{
+                     label: "Wealth %",
+                     data: pieValues
+                   }]
+                 }
+               });
+                 
+         </script>
+      </div>
+      <div class="box">
+         <h3>📉 Vitesse de dépense</h3>
+         <canvas id="spendingChart"></canvas>
+         <br /><br />
+         <canvas id="spendingChartGlobal"></canvas>
+         <script>
+             const spendingDays = ${JSON.stringify(spending.days)};
+             const spendingAmounts = ${JSON.stringify(spending.amounts)};
+            
+             new Chart(document.getElementById("spendingChart"), {
+               type: "line",
+               data: {
+                 labels: spendingDays,
+                 datasets: [{
+                   label: "Bouya dépensés par jour",
+                   data: spendingAmounts
+                 }]
+               }
+             });
+         </script>
+         <script>
+              const spendingDaysGlobal = ${JSON.stringify(spendingGlobal.days)};
+             const spendingAmountsGlobal = ${JSON.stringify(spendingGlobal.amounts)};
+            
+              new Chart(document.getElementById("spendingChartGlobal"), {
+                type: "line",
+                data: {
+                  labels: spendingDaysGlobal,
+                  datasets: [{
+                    label: "Bouya dépensés par jour Globalement",
+                    data: spendingAmountsGlobal 
+                  }]
+                }
+              });
+         </script>
+      </div>
+   </body>
+</html>
+    
+    
+    `);
 });
-
 
 app.post("/tx", (req, res) => {
   console.log(req.body);
