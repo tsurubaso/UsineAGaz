@@ -1257,6 +1257,41 @@ function renderKnownNodes() {
   `;
 }
 
+function gracefulShutdown() {
+  log("📌 Début arrêt propre...");
+
+  // 1. Prévenir les peers (optionnel)
+  broadcast({
+    type: "NODE_SHUTDOWN",
+    from: nodeID,
+  });
+
+  // 2. Fermer les sockets actives
+  log(`🔌 Fermeture de ${sockets.size} connexions...`);
+  for (const sock of sockets) {
+    sock.end();
+    sock.destroy();
+  }
+
+  // 3. Sauvegarder blockchain/mempool
+  saveChainToDisk();
+  saveMempoolToDisk();
+
+  log("✅ Données sauvegardées");
+
+  // 4. Fermer serveur TCP
+  server.close(() => {
+    log("✅ Serveur TCP fermé");
+
+    // 5. Fermer serveur web
+    webServer.close(() => {
+      log("✅ Serveur Web fermé");
+
+      log("👋 Arrêt complet. Bye.");
+      process.exit(0);
+    });
+  });
+}
 
 
 app.get("/", (req, res) => {
@@ -1358,6 +1393,7 @@ app.get("/", (req, res) => {
 
        ${renderKnownNodes()}
       </div>
+
       <div class="grid">
       <div class="box">
          <h3>⛓ Blockchain</h3>
@@ -1365,6 +1401,13 @@ app.get("/", (req, res) => {
          <h4>Derniers blocs :</h4>
          ${renderLastBlocks()}
       </div>
+      <div class="box">
+  <h3>🛑 Arrêt du node</h3>
+
+  <button onclick="shutdownNode()" style="background:red;color:white;padding:8px;">
+    Stop Node
+  </button>
+</div>
       <div class="box">
          <h3>💰 Balances</h3>
          ${renderBalances()}
@@ -1462,6 +1505,20 @@ app.get("/", (req, res) => {
               });
          </script>
       </div>
+      <script>
+  function shutdownNode() {
+    if (!confirm("⚠️ Voulez-vous vraiment arrêter ce node ?")) return;
+
+    fetch("/shutdown", { method: "POST" })
+      .then(() => {
+        alert("Node en cours d’arrêt...");
+      })
+      .catch(() => {
+        alert("Erreur pendant l’arrêt.");
+      });
+  }
+</script>
+
    </body>
 </html>
     
@@ -1516,6 +1573,20 @@ app.post("/tx", (req, res) => {
 
   res.redirect("/");
 });
+
+app.post("/shutdown", (req, res) => {
+  log("🛑 Shutdown demandé depuis le dashboard");
+
+  res.send("OK arrêt en cours...");
+
+  gracefulShutdown();
+});
+
+process.on("SIGINT", () => {
+  log("⚠️ Ctrl+C détecté → arrêt propre...");
+  gracefulShutdown();
+});
+
 
 switch (NETWORK_MODE) {
   case "docker":
