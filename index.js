@@ -1258,13 +1258,9 @@ function renderKnownNodes() {
 }
 
 function gracefulShutdown() {
-  log("📌 Début arrêt propre...");
-
-  // 1. Prévenir les peers (optionnel)
-  broadcast({
-    type: "NODE_SHUTDOWN",
-    from: nodeID,
-  });
+  log("📌 Début arrêt...");
+  log("📢 Notification des peers...");
+  broadcastShutdown();
 
   // 2. Fermer les sockets actives
   log(`🔌 Fermeture de ${sockets.size} connexions...`);
@@ -1274,8 +1270,8 @@ function gracefulShutdown() {
   }
 
   // 3. Sauvegarder blockchain/mempool
-  saveChainToDisk();
-  saveMempoolToDisk();
+  saveBlockchain();
+  //saveMempoolToDisk();
 
   log("✅ Données sauvegardées");
 
@@ -1293,6 +1289,14 @@ function gracefulShutdown() {
   });
 }
 
+function broadcastShutdown() {
+  for (const peer of peers) {
+    sendMessage(peer, {
+      type: "NODE_SHUTDOWN",
+      from: nodeID,
+    });
+  }
+}
 
 app.get("/", (req, res) => {
   const wealth = getWealthChartData();
@@ -1586,7 +1590,6 @@ process.on("SIGINT", () => {
   log("⚠️ Ctrl+C détecté → arrêt propre...");
   gracefulShutdown();
 });
-
 
 switch (NETWORK_MODE) {
   case "docker":
