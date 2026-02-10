@@ -1,30 +1,36 @@
-function renderKnownAddresses() {
-  const addresses = getKnownAddresses();
+function renderKnownNodes() {
+  const addrs = getKnownAddresses();
+
+  if (addrs.length === 0) {
+    return "<p>Aucune adresse connue pour l’instant.</p>";
+  }
 
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
   return `
-    <div class="box">
-      <h3>🌐 Interlocuteurs connus</h3>
+    <ul>
+      ${addrs
+        .map((addr, i) => {
+          const label = `node${alphabet[i] || i}`;
 
-      <ul>
-        ${addresses
-          .map((addr, i) => {
-            const label = `node${alphabet[i] || i}`;
+          return `
+            <li style="margin-bottom:10px;">
+              <b>${label}</b><br>
 
-            return `
-              <li>
-                <b>${label}</b> : ${addr.slice(0, 16)}...
-                <form method="POST" action="/tx" style="margin-top:4px;">
-                  <input type="hidden" name="to" value="${addr}" />
-                  <input type="number" name="amount" value="10" style="width:60px;" />
-                  <button type="submit">Envoyer</button>
-                </form>
-              </li>
-            `;
-          })
-          .join("")}
-      </ul>
-    </div>
+              <code style="font-size:12px;">${addr}</code><br>
+
+              <button 
+                onclick="copyToClipboard('${addr}')"
+                style="margin-top:4px; cursor:pointer;"
+              >
+                📋 Copier
+              </button>
+
+              <span id="msg-${i}" style="margin-left:6px; color:green;"></span>
+            </li>
+          `;
+        })
+        .join("")}
+    </ul>
   `;
 }

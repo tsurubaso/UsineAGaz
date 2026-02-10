@@ -366,7 +366,6 @@ function forgeBlock() {
     log("❌ Aucun bloc Genesis présent → forge impossible");
     return;
   }
-  
 
   // On prend TOUT le mempool (simple et volontaire)
   const transactions = [...mempool];
@@ -936,19 +935,40 @@ Donc on doit les retirer du mempool local.
 ════════════════════════════════════════
 */
 let connectionCount = 0;
+const sockets = new Set();
 const server = net.createServer((socket) => {
   connectionCount++;
-  log(`🔌 Nouvelle connexion (#${connectionCount})`);
+  sockets.add(socket);
+
+  log(`🔌 Nouvelle connexion`);
+  log(`📌 Total connexions depuis démarrage: ${connectionCount}`);
+  log(`🟢 Connexions actives: ${sockets.size}`);
+
+  // 📩 Réception de données
   socket.on("data", (data) => {
     console.log("📩 RAW data reçue");
     try {
       const msg = JSON.parse(data.toString());
       handleMessage(msg, socket);
-    } catch {}
+    } catch (err) {
+      log("❌ JSON invalide reçu");
+    }
+  });
+  // 🔒 Gestion de la fermeture de connexion
+  socket.on("close", () => {
+    sockets.delete(socket);
+    log(`❌ Connexion fermée → actives: ${sockets.size}`);
   });
 
+  // 📴 Fin propre
   socket.on("end", () => {
+    log("📴 Connexion terminée (end)");
+  });
+
+  // ⚠️ Erreur réseau
+  socket.on("error", (err) => {
     connectionCount--;
+    log(`>> ❌ Erreur de connexion (Socket) : ${err.message}`);
   });
 });
 
@@ -1208,18 +1228,27 @@ function renderKnownNodes() {
   if (addrs.length === 0) {
     return "<p>Aucune adresse connue pour l’instant.</p>";
   }
-const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   return `
     <ul>
       ${addrs
         .map((addr, i) => {
-          const label  = `node${alphabet[i] || i}`;
+          const label = `node${alphabet[i] || i}`;
 
           return `
-            <li>
-              <b>${label}</b> 
-              <br>
-              <code>${addr}</code><br>
+            <li style="margin-bottom:5px;">
+              <b>${label}</b><br>
+
+              <code style="font-size:12px;">${addr}</code><br>
+
+              <button 
+                onclick="copyToClipboard('${addr}')"
+                style="margin-top:2px; cursor:pointer;"
+              >
+                📋 Copier
+              </button>
+
+              <span id="msg-${i}" style="margin-left:6px; color:green;"></span>
             </li>
           `;
         })
@@ -1227,6 +1256,7 @@ const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     </ul>
   `;
 }
+
 
 
 app.get("/", (req, res) => {
@@ -1241,7 +1271,7 @@ app.get("/", (req, res) => {
       <style>
          body {
          font-family: system-ui;
-         padding: 20px;
+         padding: 10px;
          background: #f7f7f7;
          }
          h2 {
@@ -1315,7 +1345,17 @@ app.get("/", (req, res) => {
       <div class="box">${renderNodeAddress()}</div>
 
       <div class="box">
+
        <h3>👥 Adresses connues 🌐</h3>
+       <script>
+  function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+      alert("Adresse copiée !");
+      
+    });
+  }
+</script>
+
        ${renderKnownNodes()}
       </div>
       <div class="grid">
@@ -1358,10 +1398,12 @@ app.get("/", (req, res) => {
       <div class="box">
          <ul>
             ${Object.entries(stats)
-            .map(([wallet, count]) => `
-            <li>${wallet.slice(0,6)}... : ${count} tx</li>
-            `)
-            .join("")}
+              .map(
+                ([wallet, count]) => `
+            <li>${wallet.slice(0, 6)}... : ${count} tx</li>
+            `,
+              )
+              .join("")}
          </ul>
       </div>
       <div class="box">

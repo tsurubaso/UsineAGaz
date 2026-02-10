@@ -40,3 +40,29 @@ services:
     ports:
       - "5003:5000"
       - "3003:3000"
+
+  node4:
+    build: .    
+    environment:
+      - NODE_ID=${node_id4}
+      - PRIVATE_KEY=${NODE4_PRIVATE_KEY}
+      - PUBLIC_KEY=${NODE4_PUBLIC_KEY}
+      - WEB_PORT=3000
+    env_file:
+      - .env  
+    ports:
+      - "5004:5000"
+      - "3004:3000"
+  node5:
+    build: .      
+    environment:
+      - NODE_ID=${node_id5}
+      - PRIVATE_KEY=${NODE5_PRIVATE_KEY}
+      - PUBLIC_KEY=${NODE5_PUBLIC_KEY}
+      - WEB_PORT=3000 
+    env_file:
+      - .env
+    ports:  
+      - "5005:5000"
+      - "3005:3000"
+  
