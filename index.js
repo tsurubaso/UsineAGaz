@@ -1330,7 +1330,7 @@ function gracefulShutdown() {
   log("⏹️ Toutes les boucles stoppées");
 
   // 3. Sauvegarder blockchain si master
- if (NODE_ID===MASTER_ID) {saveBlockchain()
+ if (nodeID===MASTER_ID) {saveBlockchain()
   log("✅ Données sauvegardées Master Controle");
  };
   //saveMempoolToDisk();
