@@ -936,7 +936,7 @@ const server = net.createServer((socket) => {
   connectionCount++;
   log(`🔌 Nouvelle connexion (#${connectionCount})`);
   socket.on("data", (data) => {
-    console.log("📩 RAW reçu:", data[0].timestamp.toString());
+    console.log("📩 RAW data reçue");
     try {
       const msg = JSON.parse(data.toString());
       handleMessage(msg, socket);
