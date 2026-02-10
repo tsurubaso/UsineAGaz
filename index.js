@@ -360,11 +360,13 @@ function forgeBlock() {
   log("mempool=" + mempool.length);
   log("blockchain=" + blockchain.length);
 
+  const lastBlock = blockchain[blockchain.length - 1];
+
   if (!lastBlock) {
     log("❌ Aucun bloc Genesis présent → forge impossible");
     return;
   }
-  const lastBlock = blockchain[blockchain.length - 1];
+  
 
   // On prend TOUT le mempool (simple et volontaire)
   const transactions = [...mempool];
@@ -638,6 +640,8 @@ et recevoir les réponses
 function sendMessage(target, message) {
   let host = target;
   let port = P2P_PORT;
+  console.log("Sending message to " + target);
+  console.log("Using port " + port);
 
   // Mode IP : "192.168.0.112:5000"
   if (target.includes(":")) {
@@ -986,11 +990,11 @@ function startNode() {
     peers.forEach((peer) =>
       sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
     );
-  }, 1500);
+  }, 50000);
   // B. Logique spécifique au MASTER
   if (nodeID === MASTER_ID) {
     // On lance le bootstrap un peu après la synchro
-    setTimeout(() => bootstrapMoney(), 3000);
+    setTimeout(() => bootstrapMoney(), 30000);
     // On lance la boucle de forge permanente
     setInterval(() => forgeBlock(), 20000);
   } else {
@@ -1008,7 +1012,7 @@ function startNode() {
           index: lastIndex,
         }),
       );
-    }, 5000);
+    }, 50000);
   }
 }
 
