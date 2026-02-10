@@ -1306,7 +1306,6 @@ function notifyPeer(peer, message) {
   });
 }
 
-
 function gracefulShutdown() {
   log("📌 Début arrêt...");
   log("📢 Notification des peers...");
@@ -1330,11 +1329,11 @@ function gracefulShutdown() {
 
   log("⏹️ Toutes les boucles stoppées");
 
-  // 3. Sauvegarder blockchain/mempool
-  saveBlockchain();
+  // 3. Sauvegarder blockchain si master
+ if (NODE_ID===MASTER_ID) {saveBlockchain()
+  log("✅ Données sauvegardées Master Controle");
+ };
   //saveMempoolToDisk();
-
-  log("✅ Données sauvegardées");
 
   // 4. Fermer serveur TCP
   server.close(() => {
