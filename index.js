@@ -1003,24 +1003,43 @@ switch (NETWORK_MODE) {
     });
 }
 
+let started = false;
+
+let syncTimeout = null;
+let bootstrapTimeout = null;
+
+let forgeInterval = null;
+let followerInterval = null;
+
 function startNode() {
-  // Sync initiale pour tout le monde
-  setTimeout(() => {
+  if (started) return;
+  started = true;
+
+  // Sync initiale
+  syncTimeout = setTimeout(() => {
     log(">> 🔄 Sync au démarrage");
+
     peers.forEach((peer) =>
       sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
     );
-  }, 50000);
-  // B. Logique spécifique au MASTER
+  }, 10000);
+
+  // MASTER
   if (nodeID === MASTER_ID) {
-    // On lance le bootstrap un peu après la synchro
-    setTimeout(() => bootstrapMoney(), 30000);
-    // On lance la boucle de forge permanente
-    setInterval(() => forgeBlock(), 20000);
-  } else {
-    // Logique Follower (Polling) - Sorti du bloc Master
-    setInterval(() => {
+    bootstrapTimeout = setTimeout(() => {
+      bootstrapMoney();
+    }, 15000);
+
+    forgeInterval = setInterval(() => {
+      forgeBlock();
+    }, 14000);
+  }
+
+  // FOLLOWER
+  else {
+    followerInterval = setInterval(() => {
       log(">> 🔍 Check incrémental...");
+
       const lastIndex = blockchain.length
         ? blockchain[blockchain.length - 1].index
         : 0;
@@ -1032,7 +1051,7 @@ function startNode() {
           index: lastIndex,
         }),
       );
-    }, 50000);
+    }, 20000);
   }
 }
 
@@ -1257,10 +1276,42 @@ function renderKnownNodes() {
   `;
 }
 
+function notifyPeer(peer, message) {
+  if (gracefulShutdown) return;
+
+  let host = peer;
+  let port = P2P_PORT;
+
+  if (peer.includes(":")) {
+    [host, port] = peer.split(":");
+    port = parseInt(port);
+  }
+
+  const client = net.createConnection({ host, port });
+
+  // ⚡ mini timeout juste pour éviter blocage
+  client.setTimeout(300);
+
+  client.on("connect", () => {
+    client.write(JSON.stringify(message));
+    client.end(); // 👋 terminé direct
+  });
+
+  client.on("timeout", () => {
+    client.destroy(); // abandon immédiat
+  });
+
+  client.on("error", () => {
+    // 🔇 silence total : notification best effort
+  });
+}
+
+
 function gracefulShutdown() {
   log("📌 Début arrêt...");
   log("📢 Notification des peers...");
   broadcastShutdown();
+//
 
   // 2. Fermer les sockets actives
   log(`🔌 Fermeture de ${sockets.size} connexions...`);
@@ -1268,6 +1319,16 @@ function gracefulShutdown() {
     sock.end();
     sock.destroy();
   }
+
+  // stop timeouts
+  clearTimeout(syncTimeout);
+  clearTimeout(bootstrapTimeout);
+
+  // stop loops
+  clearInterval(forgeInterval);
+  clearInterval(followerInterval);
+
+  log("⏹️ Toutes les boucles stoppées");
 
   // 3. Sauvegarder blockchain/mempool
   saveBlockchain();
@@ -1290,12 +1351,7 @@ function gracefulShutdown() {
 }
 
 function broadcastShutdown() {
-  for (const peer of peers) {
-    sendMessage(peer, {
-      type: "NODE_SHUTDOWN",
-      from: nodeID,
-    });
-  }
+   peers.forEach((peer) => notifyPeer(peer, { type: "NODE_SHUTDOWN", from: nodeID }));
 }
 
 app.get("/", (req, res) => {
@@ -1591,21 +1647,25 @@ process.on("SIGINT", () => {
   gracefulShutdown();
 });
 
+let webServer;
+
 switch (NETWORK_MODE) {
   case "docker":
-    app.listen(WEB_PORT, "0.0.0.0", () => {
+    webServer = app.listen(WEB_PORT, "0.0.0.0", () => {
       log(`>> 🌍 Dashboard Web (Docker) sur http://localhost:${WEB_PORT}`);
     });
     break;
 
   case "ip":
-    app.listen(WEB_PORT, "0.0.0.0", () => {
+    webServer = app.listen(WEB_PORT, "0.0.0.0", () => {
       log(`>> 🌍 Dashboard Web (IP) sur http://<TON_IP>:${WEB_PORT}`);
     });
     break;
 
   default:
-    app.listen(WEB_PORT, () => {
-      log(`>> 🌍 Dashboard Web (local) sur http://localhost:${WEB_PORT}`);
+    webServer = app.listen(WEB_PORT, () => {
+      log(
+        `>> 🌍 Dashboard Web (local Defaulting) sur http://localhost:${WEB_PORT}`,
+      );
     });
 }

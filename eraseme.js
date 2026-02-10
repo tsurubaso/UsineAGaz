@@ -1,16 +1,20 @@
 function gracefulShutdown() {
   log("🛑 Arrêt propre...");
 
-  // fermer sockets
-  for (const sock of sockets) {
-    sock.end();
-    sock.destroy();
-  }
+  // stop timeouts
+  clearTimeout(syncTimeout);
+  clearTimeout(bootstrapTimeout);
 
-  saveChainToDisk();
+  // stop loops
+  clearInterval(forgeInterval);
+  clearInterval(followerInterval);
 
+  log("⏹️ Toutes les boucles stoppées");
+
+  // close server
   server.close(() => {
     log("✅ Serveur TCP fermé");
+
     process.exit(0);
   });
 }
