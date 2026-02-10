@@ -1437,22 +1437,18 @@ app.get("/", (req, res) => {
    <body>
       <h2>📡 Node Dashboard — ${nodeID}</h2>
       <div class="box">${renderNodeAddress()}</div>
-
       <div class="box">
-
-       <h3>👥 Adresses connues 🌐</h3>
-       <script>
-  function copyToClipboard(text) {
-    navigator.clipboard.writeText(text).then(() => {
-      alert("Adresse copiée !");
-      
-    });
-  }
-</script>
-
-       ${renderKnownNodes()}
+         <h3>👥 Adresses connues 🌐</h3>
+         <script>
+            function copyToClipboard(text) {
+              navigator.clipboard.writeText(text).then(() => {
+                alert("Adresse copiée !");
+                
+              });
+            }
+         </script>
+         ${renderKnownNodes()}
       </div>
-
       <div class="grid">
       <div class="box">
          <h3>⛓ Blockchain</h3>
@@ -1461,12 +1457,11 @@ app.get("/", (req, res) => {
          ${renderLastBlocks()}
       </div>
       <div class="box">
-  <h3>🛑 Arrêt du node</h3>
-
-  <button onclick="shutdownNode()" style="background:red;color:white;padding:8px;">
-    Stop Node
-  </button>
-</div>
+         <h3>🛑 Arrêt du node</h3>
+         <button onclick="shutdownNode()" style="background:red;color:white;padding:8px;">
+         Stop Node
+         </button>
+      </div>
       <div class="box">
          <h3>💰 Balances</h3>
          ${renderBalances()}
@@ -1500,32 +1495,32 @@ app.get("/", (req, res) => {
       <div class="box">
          <ul>
             ${Object.entries(stats)
-              .map(
-                ([wallet, count]) => `
+            .map(
+            ([wallet, count]) => `
             <li>${wallet.slice(0, 6)}... : ${count} tx</li>
             `,
-              )
-              .join("")}
+            )
+            .join("")}
          </ul>
       </div>
       <div class="box">
          <h3>🥧 Répartition des richesses</h3>
          <canvas id="pieChart"></canvas>
          <script>
-               const pieLabels = ${JSON.stringify(wealth.labels)};
+              const pieLabels = ${JSON.stringify(wealth.labels)};
                const pieValues = ${JSON.stringify(wealth.values)};
             
-               new Chart(document.getElementById("pieChart"), {
-                 type: "pie",
-                 data: {
-                   labels: pieLabels,
-                   datasets: [{
-                     label: "Wealth %",
-                     data: pieValues
-                   }]
-                 }
-               });
-                 
+              new Chart(document.getElementById("pieChart"), {
+                type: "pie",
+                data: {
+                  labels: pieLabels,
+                  datasets: [{
+                    label: "Wealth %",
+                    data: pieValues
+                  }]
+                }
+              });
+                
          </script>
       </div>
       <div class="box">
@@ -1534,54 +1529,52 @@ app.get("/", (req, res) => {
          <br /><br />
          <canvas id="spendingChartGlobal"></canvas>
          <script>
-             const spendingDays = ${JSON.stringify(spending.days)};
-             const spendingAmounts = ${JSON.stringify(spending.amounts)};
-            
-             new Chart(document.getElementById("spendingChart"), {
-               type: "line",
-               data: {
-                 labels: spendingDays,
-                 datasets: [{
-                   label: "Bouya dépensés par jour",
-                   data: spendingAmounts
-                 }]
-               }
-             });
-         </script>
-         <script>
-              const spendingDaysGlobal = ${JSON.stringify(spendingGlobal.days)};
-             const spendingAmountsGlobal = ${JSON.stringify(spendingGlobal.amounts)};
-            
-              new Chart(document.getElementById("spendingChartGlobal"), {
+              const spendingDays = ${JSON.stringify(spending.days)};
+               const spendingAmounts = ${JSON.stringify(spending.amounts)};
+             
+              new Chart(document.getElementById("spendingChart"), {
                 type: "line",
                 data: {
-                  labels: spendingDaysGlobal,
+                  labels: spendingDays,
                   datasets: [{
-                    label: "Bouya dépensés par jour Globalement",
-                    data: spendingAmountsGlobal 
+                    label: "Bouya dépensés par jour",
+                    data: spendingAmounts
                   }]
                 }
               });
          </script>
+         <script>
+                const spendingDaysGlobal = ${JSON.stringify(spendingGlobal.days)};
+               const spendingAmountsGlobal = ${JSON.stringify(spendingGlobal.amounts)};
+              
+                new Chart(document.getElementById("spendingChartGlobal"), {
+                  type: "line",
+                  data: {
+                    labels: spendingDaysGlobal,
+                    datasets: [{
+                      label: "Bouya dépensés par jour Globalement",
+                      data: spendingAmountsGlobal 
+                    }]
+                  }
+                });
+         </script>
       </div>
       <script>
-  function shutdownNode() {
-    if (!confirm("⚠️ Voulez-vous vraiment arrêter ce node ?")) return;
-
-    fetch("/shutdown", { method: "POST" })
-      .then(() => {
-        alert("Node en cours d’arrêt...");
-      })
-      .catch(() => {
-        alert("Erreur pendant l’arrêt.");
-      });
-  }
-</script>
-
+         function shutdownNode() {
+           if (!confirm("⚠️ Voulez-vous vraiment arrêter ce node ?")) return;
+         
+           fetch("/shutdown", { method: "POST" })
+             .then(() => {
+               alert("Node en cours d’arrêt...");
+             })
+             .catch(() => {
+               alert("Erreur pendant l’arrêt.");
+             });
+         }
+      </script>
    </body>
 </html>
-    
-    
+
     `);
 });
 
