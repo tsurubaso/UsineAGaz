@@ -1189,6 +1189,46 @@ function getGlobalSpendingChartData() {
   return { days, amounts };
 }
 
+function getKnownAddresses() {
+  const set = new Set();
+
+  blockchain.forEach((block) => {
+    block.data?.transactions?.forEach((tx) => {
+      if (tx.from && tx.from !== "MINT") set.add(tx.from);
+      if (tx.to) set.add(tx.to);
+    });
+  });
+  // ✅ Supprime ma propre adresse
+  return Array.from(set).filter((addr) => addr !== publicKey);
+}
+
+function renderKnownNodes() {
+  const addrs = getKnownAddresses();
+
+  if (addrs.length === 0) {
+    return "<p>Aucune adresse connue pour l’instant.</p>";
+  }
+const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  return `
+    <ul>
+      ${addrs
+        .map((addr, i) => {
+          const label  = `node${alphabet[i] || i}`;
+
+          return `
+            <li>
+              <b>${label}</b> 
+              <br>
+              <code>${addr}</code><br>
+            </li>
+          `;
+        })
+        .join("")}
+    </ul>
+  `;
+}
+
+
 app.get("/", (req, res) => {
   const wealth = getWealthChartData();
   const stats = getWalletActivity();
@@ -1273,6 +1313,11 @@ app.get("/", (req, res) => {
    <body>
       <h2>📡 Node Dashboard — ${nodeID}</h2>
       <div class="box">${renderNodeAddress()}</div>
+
+      <div class="box">
+       <h3>👥 Adresses connues 🌐</h3>
+       ${renderKnownNodes()}
+      </div>
       <div class="grid">
       <div class="box">
          <h3>⛓ Blockchain</h3>
