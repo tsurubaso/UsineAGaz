@@ -5,6 +5,7 @@ import crypto from "crypto";
 import net from "net";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
+import express from "express";
 let logs = [];
 
 /*
@@ -42,7 +43,7 @@ function log(message) {
 
 /*
 ════════════════════════════════════════
-0. CONFIGURATION DU NŒUD
+ CONFIGURATION DU NŒUD
 ════════════════════════════════════════
 Chaque conteneur définit NODE_ID
 (node1 = master / node2, node3 = followers)  
@@ -60,7 +61,7 @@ log(`>> WEB_PORT = ${WEB_PORT}`);
 
 /*
 ════════════════════════════════════════
-1. PEERS CONFIG (JSON)
+ PEERS CONFIG (JSON)
 ════════════════════════════════════════
 */
 
@@ -82,7 +83,7 @@ log(`>> Peers chargés (${NETWORK_MODE}) : ${JSON.stringify(peers)}`);
 
 /*
 ════════════════════════════════════════
-1. ÉTAT LOCAL
+     ÉTAT LOCAL
 ════════════════════════════════════════
 Chaque nœud possède sa copie locale
 de la blockchain.
@@ -93,7 +94,7 @@ let blockchain = [];
 
 /*
 ════════════════════════════════════════
-A. POOL DE TRANSACTIONS
+     POOL DE TRANSACTIONS
 ════════════════════════════════════════
 Chaque nœud maintient un pool de
 transactions en attente d’inclusion
@@ -122,20 +123,15 @@ let mempool = [];
 
 /*
 ════════════════════════════════════════
-ÉTAT DES SOLDES (LEDGER LOCAL)
+      ÉTAT DES SOLDES (LEDGER LOCAL)
 ════════════════════════════════════════
 - Dérivé de la blockchain
 - Jamais envoyé sur le réseau
 - Recalculable à tout moment
 */
-//////////////////////////////////////////////////////////////////////////////revision du code
+
 let balances = {};
 
-/*
-════════════════════════════════════════
-AFFICHAGE WEB (DASHBOARD)
-════════════════════════════════════════
-*/
 
 function renderBalances() {
   if (Object.keys(balances).length === 0) {
@@ -147,7 +143,7 @@ function renderBalances() {
       ${Object.entries(balances)
         .map(
           ([key, val]) =>
-            `<li><b>${key.slice(0, 12)}...</b> : ${val} Bouya</li>`,
+            `<li><b>${key.slice(0, 6)}...</b> : ${val} Bouya</li>`,
         )
         .join("")}
     </ul>
@@ -156,64 +152,32 @@ function renderBalances() {
 
 /*
 ════════════════════════════════════════
-ÉTAT DES SERVICES (ENGAGEMENTS)
-════════════════════════════════════════
-Un service est un accord social :
-- un demandeur
-- un prestataire
-- un paiement en deux temps
-*/
-
-let services = {};
-
-/*
-Structure d’un service :
-
-services[serviceId] = {
-  client: <publicKey>,
-  worker: <publicKey>,
-  totalAmount: number,
-  paidBefore: number,
-  paidAfter: number,
-  status: "CREATED" | "STARTED" | "DONE" | "ABANDONED"
-}
-*/
-
-/*
-════════════════════════════════════════
-TRANSACTION SPÉCIALE : MINT
+      TRANSACTION SPÉCIALE : MINT
 ════════════════════════════════════════
 - Seul node1 a le droit de créer de la monnaie
 - Pas de signature requise
-- Utilisée uniquement dans le Genesis (pour l’instant)
+- Node1 crée la monnaie après démarrage
+- Puis distribue aux autres nodes
+- Ne touche pas au Genesis
 */
 
 function isMintTransaction(tx) {
   return tx.from === "MINT";
 }
 
-/*
-═══════════════════════════════════════
-BOOTSTRAP MONÉTAIRE
-- Node1 crée la monnaie après démarrage
-- Puis distribue aux autres nodes
-- Ne touche pas au Genesis
-═══════════════════════════════════════
-*/
-
 let bootstrapDone = false;
 
 function bootstrapMoney() {
   if (bootstrapDone) return;
 
-  // Seul node1 a le droit de faire ça
+  // Seul node1 a le droit de Minter
   if (nodeID !== MASTER_ID) return;
   // SÉCURITÉ : Si aucun mouvement, on ne crée pas de bloc inutile
 
   // ✅ Ne jamais remint si déjà fait
   // ✅ Si déjà bootstrappé → stop
   if (fs.existsSync("./data/bootstrap_done.flag")) {
-    log(">> ⚠️ Bootstrap déjà fait → aucun mint");
+    log(">> ⚠️ Bootstrap déjà effectué → No mint today...");
     bootstrapDone = true;
     return;
   }
@@ -230,13 +194,12 @@ function bootstrapMoney() {
   };
 
   mintTx.id = createTransactionId(mintTx);
-  log("BOOTSTRAP START");
+  log(">> BOOTSTRAP START");
 
   log("Blockchain length = " + blockchain.length);
   log("Mempool length before = " + mempool.length);
   mempool.push(mintTx);
   log("Mempool length after = " + mempool.length);
-
   log(`>> ✅ Mint ajouté au mempool (${mempool.length} tx`);
   // FORCE LE PREMIER BLOC IMMÉDIATEMENT
   log(`>> ⛏️ Forgeage immédiat du bloc de bootstrap...`);
@@ -268,7 +231,7 @@ function applyTransaction(tx, balances) {
   balances[tx.from] = (balances[tx.from] || 0) - tx.amount;
   balances[tx.to] = (balances[tx.to] || 0) + tx.amount;
   log(
-    `>> [Balance] Transfert: ${tx.from.slice(0, 10)}... -> ${tx.to.slice(0, 10)}... (${tx.amount})`,
+    `>> [Balance] Transfert: ${tx.from.slice(0, 6)}... -> ${tx.to.slice(0, 6)}... (${tx.amount})`,
   );
 }
 
@@ -290,7 +253,7 @@ let isSyncing = true;
 
 /*
 ════════════════════════════════════════
-B. Transactions (exemple simplifié)
+       Transactions Actions
 ════════════════════════════════════════
 */
 
@@ -308,13 +271,13 @@ function hashTransaction(tx) {
 function signTransaction(tx, privateKeyHex) {
   const msgHash = hashTransaction(tx);
   const keyBytes = hexToBytes(privateKeyHex);
-
   const signature = secp256k1.sign(msgHash, keyBytes);
 
   // Stockage en hex pour JSON
   return Buffer.from(signature).toString("hex");
 }
-log("Public key length = " + publicKey.length);
+
+log( ">> Public key length = " + publicKey.length);
 
 function verifyTransaction(tx) {
   if (!tx.signature || !tx.from) return false;
@@ -332,7 +295,7 @@ function verifyTransaction(tx) {
 
 /*
 ════════════════════════════════════════
-C. FORGE D’UN BLOC (MASTER UNIQUEMENT)
+       FORGE D’UN BLOC (MASTER)
 ════════════════════════════════════════
 Le master :
 - prend des transactions du mempool
@@ -358,7 +321,7 @@ function forgeBlock() {
     log(`>> ⏸️ Mempool vide, rien à forger`);
     return;
   }
-  log(`>> ⛏️ Forgeage en cours...`); // Ajoute ce log pour voir si ça entre ici
+  log(`>> ⛏️ Forgeage en cours...`); 
 
   log("FORGEBLOCK ENTERED");
 
@@ -407,6 +370,10 @@ function forgeBlock() {
   for (const tx of block.data.transactions) {
     applyTransaction(tx, balances);
   }
+
+
+
+
   /*
       ════════════════════════════════════════
       NETTOYAGE DU MEMPOOL
@@ -442,7 +409,7 @@ function forgeBlock() {
 
 /*
 ════════════════════════════════════════
-D. IDENTIFIANT DE TRANSACTION
+       IDENTIFIANT DE TRANSACTION
 ════════════════════════════════════════
 - Déterministe
 - Identique sur tous les nœuds
@@ -458,7 +425,7 @@ function createTransactionId(tx) {
 
 /*
 ════════════════════════════════════════
-2. CRYPTOGRAPHIE
+       CRYPTOGRAPHIE
 ════════════════════════════════════════
 Séparation volontaire :
 - hash structurel (lisible, hex)
@@ -516,7 +483,7 @@ function verifyBlockSignature(block) {
 
 /*
 ════════════════════════════════════════
-3. GENESIS BLOCK
+     GENESIS BLOCK
 ════════════════════════════════════════
 - Identique pour tous
 - Signé UNIQUEMENT par le master
@@ -567,7 +534,7 @@ if (nodeID === MASTER_ID) {
 
 /*
 ════════════════════════════════════════
-4. VALIDATION DE CHAÎNE
+      VALIDATION DE CHAÎNE
 ════════════════════════════════════════
 Utilisée lors de la synchronisation
 */
@@ -637,7 +604,7 @@ function recalculateBalances() {
 
 /*
 ════════════════════════════════════════
-5. CLIENT TCP
+      CLIENT TCP
 ════════════════════════════════════════
 Utilisé pour envoyer des messages
 et recevoir les réponses
@@ -660,7 +627,7 @@ function sendMessage(target, message) {
   });
 
   client.on("data", (data) => {
-    log(`>> 📤 data traitées au ${host}:${port}`);
+    log(`>> 📤 data traitées pour ${host}:${port}`);
     try {
       const msg = JSON.parse(data.toString());
       handleMessage(msg);
@@ -681,7 +648,7 @@ function txAlreadyInChain(txid) {
 
 /*
 ════════════════════════════════════════
-6. ROUTEUR DE MESSAGES
+       ROUTEUR DE MESSAGES
 ════════════════════════════════════════
 Toute la logique réseau est centralisée ici
 */
@@ -864,7 +831,7 @@ function handleMessage(msg, socket = null) {
 
       /*
 ═══════════════════════════════════════
-NETTOYAGE DU MEMPOOL (FOLLOWERS)
+      NETTOYAGE DU MEMPOOL (FOLLOWERS)
 ═══════════════════════════════════════
 Quand un bloc arrive du réseau,
 toutes ses transactions deviennent confirmées.
@@ -876,7 +843,7 @@ Donc on doit les retirer du mempool local.
 
       mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
 
-      // Application des transactions du bloc aux soldes //////////////////////////////////////////////Doublon
+      // Application des transactions du bloc aux soldes 
       // for (const tx of block.data.transactions) { applyTransaction(tx, balances);}
 
       log(`>> ➕ Bloc ajouté`);
@@ -938,7 +905,7 @@ Donc on doit les retirer du mempool local.
 
 /*
 ════════════════════════════════════════
-7. SERVEUR TCP
+      SERVEUR TCP
 ════════════════════════════════════════
 */
 let connectionCount = 0;
@@ -981,7 +948,7 @@ const server = net.createServer((socket) => {
 
 /*
 ════════════════════════════════════════
-8. DÉMARRAGE & SYNCHRO INITIALE
+      DÉMARRAGE & SYNCHRO INITIALE
 ════════════════════════════════════════
 */
 
@@ -1010,6 +977,12 @@ switch (NETWORK_MODE) {
     });
 }
 
+/*
+════════════════════════════════════════  
+9. DASHBOARD WEB (EXPRESS)
+════════════════════════════════════════
+*/
+
 let started = false;
 
 let syncTimeout = null;
@@ -1035,11 +1008,11 @@ function startNode() {
   if (nodeID === MASTER_ID) {
     bootstrapTimeout = setTimeout(() => {
       bootstrapMoney();
-    }, 15000);
+    }, 12000);
 
     forgeInterval = setInterval(() => {
       forgeBlock();
-    }, 14000);
+    }, 11000);
   }
 
   // FOLLOWER
@@ -1058,16 +1031,9 @@ function startNode() {
           index: lastIndex,
         }),
       );
-    }, 20000);
+    }, 13000);
   }
 }
-
-/*
-════════════════════════════════════════  
-9. DASHBOARD WEB (EXPRESS)
-════════════════════════════════════════
-*/
-import express from "express";
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -1091,7 +1057,7 @@ function renderLastBlocks(limit = 5) {
           (b) => `
         <li>
           <b>#${b.index}</b>
-          — Hash: ${b.hash.slice(0, 12)}...
+          — Hash: ${b.hash.slice(0, 6)}...
         </li>
       `,
         )
