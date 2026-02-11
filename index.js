@@ -1353,6 +1353,8 @@ function broadcastShutdown() {
    peers.forEach((peer) => notifyPeer(peer, { type: "NODE_SHUTDOWN", from: nodeID }));
 }
 
+
+
 app.get("/", (req, res) => {
   const wealth = getWealthChartData();
   const stats = getWalletActivity();
