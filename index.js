@@ -7,13 +7,38 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
 let logs = [];
 
+/*
+════════════════════════════════════════
+        General concept      
+════════════════════════════════════════
+*/
+
 // Banque centrale : un seul node autorisé à forger et mint
 // Tous les autres sont followers (validation + propagation)
+// Elles ne conservent pas le file qui contient la Blokchain: master_chain.json
+
 const MASTER_ID = process.env.MASTER_ID || "node1";
 const WEB_PORT = parseInt(process.env.WEB_PORT || "3000");
 const P2P_PORT = parseInt(process.env.P2P_PORT || "5000");
 
 const NETWORK_MODE = process.env.NETWORK_MODE || "docker";
+
+/*
+════════════════════════════════════════
+Un des points les plus importants seront les logs.
+On va beaucoup loger. 
+════════════════════════════════════════
+*/
+
+function log(message) {
+  const line = `[${nodeID}] ${message}`;
+  console.log(line);
+
+  logs.push(line);
+
+  // limite à 30 lignes
+  if (logs.length > 30) logs.shift();
+}
 
 /*
 ════════════════════════════════════════
@@ -35,28 +60,22 @@ log(`>> WEB_PORT = ${WEB_PORT}`);
 
 /*
 ════════════════════════════════════════
-PEERS CONFIG (JSON)
+1. PEERS CONFIG (JSON)
 ════════════════════════════════════════
 */
 
 const peersConfig = JSON.parse(fs.readFileSync("./peers.json", "utf-8"));
 
-/*
-════════════════════════════════════════
-LISTE DES PEERS (DYNAMIQUE)
-════════════════════════════════════════
-*/
-
 let peers = [];
+
+// On enlève notre propre adresse IP:PORT pour éviter de se connecter à soi-même et provoquer un feu d'artifice.
 
 if (NETWORK_MODE === "docker") {
   peers = peersConfig.peersDocker.filter((id) => id !== nodeID);
 }
 
-// On enlève notre propre adresse IP:PORT pour éviter de se connecter à soi-même
 if (NETWORK_MODE === "ip") {
   peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(":" + P2P_PORT));
-  //peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(":" + P2P_PORT));
 }
 
 log(`>> Peers chargés (${NETWORK_MODE}) : ${JSON.stringify(peers)}`);
@@ -68,16 +87,14 @@ log(`>> Peers chargés (${NETWORK_MODE}) : ${JSON.stringify(peers)}`);
 Chaque nœud possède sa copie locale
 de la blockchain.
 */
-//ancien etat de la blockchain
-//Elle etait creee vide au demarrage
-//maintenant elle sera chargee depuis le disque si le fichier existe
+// Elle sera chargee depuis le disque si le fichier existe.
+//pour DOcker: data-node1 ou en mode ip: data
 let blockchain = [];
 
 /*
 ════════════════════════════════════════
 A. POOL DE TRANSACTIONS
 ════════════════════════════════════════
-
 Chaque nœud maintient un pool de
 transactions en attente d’inclusion
 dans un bloc.
@@ -98,20 +115,10 @@ Message transaction:
   timestamp: string,
   signature: hex
 }
-
+Et c'est tout! Les .changes d&informations seront fait sur la base de la clé Public. 
 */
 
 let mempool = [];
-
-function log(message) {
-  const line = `[${nodeID}] ${message}`;
-  console.log(line);
-
-  logs.push(line);
-
-  // limite à 30 lignes
-  if (logs.length > 30) logs.shift();
-}
 
 /*
 ════════════════════════════════════════
@@ -121,7 +128,7 @@ function log(message) {
 - Jamais envoyé sur le réseau
 - Recalculable à tout moment
 */
-
+//////////////////////////////////////////////////////////////////////////////revision du code
 let balances = {};
 
 /*
@@ -974,7 +981,7 @@ const server = net.createServer((socket) => {
 
 /*
 ════════════════════════════════════════
-8. DÉMARRAGE & SYNCHRO INITIALE///////////////////////////////////////////////////////////////////////////////////////
+8. DÉMARRAGE & SYNCHRO INITIALE
 ════════════════════════════════════════
 */
 
@@ -1354,7 +1361,6 @@ function broadcastShutdown() {
 }
 
 
-
 app.get("/", (req, res) => {
   const wealth = getWealthChartData();
   const stats = getWalletActivity();
@@ -1638,7 +1644,7 @@ app.post("/shutdown", (req, res) => {
 
 process.on("SIGINT", () => {
   log("⚠️ Ctrl+C détecté → arrêt propre...");
-  gracefulShutdown();
+  log("⚠️ Shutdown Brutal...");
 });
 
 let webServer;
