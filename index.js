@@ -143,7 +143,7 @@ function renderBalances() {
       ${Object.entries(balances)
         .map(
           ([key, val]) =>
-            `<li><b>${key.slice(0, 6)}...</b> : ${val} Bouya</li>`,
+            `<li><b>${key.slice(0, 12)}...</b> : ${val} Bouya</li>`,
         )
         .join("")}
     </ul>
@@ -231,7 +231,7 @@ function applyTransaction(tx, balances) {
   balances[tx.from] = (balances[tx.from] || 0) - tx.amount;
   balances[tx.to] = (balances[tx.to] || 0) + tx.amount;
   log(
-    `>> [Balance] Transfert: ${tx.from.slice(0, 6)}... -> ${tx.to.slice(0, 6)}... (${tx.amount})`,
+    `>> [Balance] Transfert: ${tx.from.slice(0, 12)}... -> ${tx.to.slice(0, 12)}... (${tx.amount})`,
   );
 }
 
@@ -490,7 +490,7 @@ function verifyBlockSignature(block) {
 */
 
 function createGenesisBlock() {
-  const timestamp = Date.parse("2024-01-01");
+  const timestamp =  "2024-01-01";                   //Date.parse("2024-01-01");
   const data = { message: "Genesis Block - Buyabuya" };
 
   return {
@@ -931,7 +931,7 @@ const server = net.createServer((socket) => {
   // 🔒 Gestion de la fermeture de connexion
   socket.on("close", () => {
     sockets.delete(socket);
-     connectionCount--;
+     connectionCount--;                                           //
     log(`❌ Connexion fermée → actives: ${sockets.size}`);
     
   });
@@ -1010,11 +1010,11 @@ function startNode() {
   if (nodeID === MASTER_ID) {
     bootstrapTimeout = setTimeout(() => {
       bootstrapMoney();
-    }, 12000);
+    }, 15000);
 
     forgeInterval = setInterval(() => {
       forgeBlock();
-    }, 11000);
+    }, 14000);
   }
 
   // FOLLOWER
@@ -1033,7 +1033,7 @@ function startNode() {
           index: lastIndex,
         }),
       );
-    }, 18000);
+    }, 20000);
   }
 }
 
@@ -1059,7 +1059,7 @@ function renderLastBlocks(limit = 5) {
           (b) => `
         <li>
           <b>#${b.index}</b>
-          — Hash: ${b.hash.slice(0, 6)}...
+          — Hash: ${b.hash.slice(0, 12)}...
         </li>
       `,
         )
@@ -1090,9 +1090,9 @@ function renderLastTransactions(limit = 5) {
           (tx) => `
         <li>
           ${tx.amount} Bouya —
-          <span>${tx.from === "MINT" ? "🪙 MINT" : tx.from.slice(0, 6) + "..."}</span>
+          <span>${tx.from === "MINT" ? "🪙 MINT" : tx.from.slice(0, 12) + "..."}</span>
           →
-          <span>${tx.to.slice(0, 6)}...</span>
+          <span>${tx.to.slice(0, 12)}...</span>
         </li>
       `,
         )
@@ -1125,7 +1125,7 @@ function getWealthChartData() {
 
   const total = entries.reduce((sum, [_, amount]) => sum + amount, 0);
 
-  const labels = entries.map(([addr]) => addr.slice(0, 6) + "...");
+  const labels = entries.map(([addr]) => addr.slice(0, 12) + "...");
   const values = entries.map(([_, amount]) =>
     ((amount / total) * 100).toFixed(1),
   );
@@ -1225,10 +1225,7 @@ function renderKnownNodes() {
   `;
 }
 
-let shuttingDown = false;
-
 function notifyPeer(peer, message) {
-  if (shuttingDown) return;
 
   let host = peer;
   let port = P2P_PORT;
@@ -1299,7 +1296,6 @@ function gracefulShutdown() {
     });
   });
 
-  shuttingDown = true;
 }
 
 function broadcastShutdown() {
@@ -1457,7 +1453,7 @@ app.get("/", (req, res) => {
             ${Object.entries(stats)
             .map(
             ([wallet, count]) => `
-            <li>${wallet.slice(0, 6)}... : ${count} tx</li>
+            <li>${wallet.slice(0, 12)}... : ${count} tx</li>
             `,
             )
             .join("")}
