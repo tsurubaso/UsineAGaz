@@ -490,7 +490,7 @@ function verifyBlockSignature(block) {
 */
 
 function createGenesisBlock() {
-  const timestamp = "2024-01-01";
+  const timestamp = Date.parse("2024-01-01");
   const data = { message: "Genesis Block - Buyabuya" };
 
   return {
@@ -931,7 +931,9 @@ const server = net.createServer((socket) => {
   // 🔒 Gestion de la fermeture de connexion
   socket.on("close", () => {
     sockets.delete(socket);
+     connectionCount--;
     log(`❌ Connexion fermée → actives: ${sockets.size}`);
+    
   });
 
   // 📴 Fin propre
@@ -1031,7 +1033,7 @@ function startNode() {
           index: lastIndex,
         }),
       );
-    }, 13000);
+    }, 18000);
   }
 }
 
@@ -1114,16 +1116,6 @@ function getWalletActivity() {
   return stats;
 }
 
-function getWealthDistribution() {
-  const total = Object.values(balances).reduce((a, b) => a + b, 0);
-
-  return Object.entries(balances).map(([addr, amount]) => {
-    return {
-      wallet: addr.slice(0, 8),
-      percent: ((amount / total) * 100).toFixed(1),
-    };
-  });
-}
 function getWealthChartData() {
   const entries = Object.entries(balances);
 
@@ -1141,20 +1133,6 @@ function getWealthChartData() {
   return { labels, values };
 }
 
-function getSpendingRate(wallet) {
-  let spending = {};
-
-  blockchain.forEach((block) => {
-    block.data?.transactions?.forEach((tx) => {
-      if (tx.from === wallet) {
-        const day = new Date(tx.timestamp).toISOString().slice(0, 10);
-        spending[day] = (spending[day] || 0) + tx.amount;
-      }
-    });
-  });
-
-  return spending;
-}
 
 function getSpendingChartData(wallet) {
   let spendingPerDay = {};
@@ -1222,35 +1200,35 @@ function renderKnownNodes() {
   }
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   return `
-    <ul>
-      ${addrs
-        .map((addr, i) => {
-          const label = `node${alphabet[i] || i}`;
-
-          return `
-            <li style="margin-bottom:5px;">
-              <b>${label}</b><br>
-
-              <code style="font-size:12px;">${addr}</code><br>
-
-              <button 
-                onclick="copyToClipboard('${addr}')"
-                style="margin-top:2px; cursor:pointer;"
-              >
-                📋 Copier
-              </button>
-
-              <span id="msg-${i}" style="margin-left:6px; color:green;"></span>
-            </li>
-          `;
-        })
-        .join("")}
-    </ul>
+  <ul>
+   ${addrs
+   .map((addr, i) => {
+   const label = `node${alphabet[i] || i}`;
+   return `
+   <li style="margin-bottom:5px;">
+      <b>${label}</b><br>
+      <code style="font-size:12px;">${addr}</code><br>
+      <button 
+         onclick="copyToClipboard('${i}', '${addr}')"
+         style="margin-top:2px; cursor:pointer;"
+         >
+      📋 Copier
+      </button>
+      📋 Copier
+      </button>
+      <span id="msg-${i}" style="margin-left:6px; color:green;"></span>
+   </li>
+   `;
+   })
+   .join("")}
+</ul>
   `;
 }
 
+let shuttingDown = false;
+
 function notifyPeer(peer, message) {
-  if (gracefulShutdown) return;
+  if (shuttingDown) return;
 
   let host = peer;
   let port = P2P_PORT;
@@ -1320,6 +1298,8 @@ function gracefulShutdown() {
       process.exit(0);
     });
   });
+
+  shuttingDown = true;
 }
 
 function broadcastShutdown() {
@@ -1414,9 +1394,14 @@ app.get("/", (req, res) => {
       <div class="box">
          <h3>👥 Adresses connues 🌐</h3>
          <script>
-            function copyToClipboard(text) {
+            function copyToClipboard(id,text) {
               navigator.clipboard.writeText(text).then(() => {
-                alert("Adresse copiée !");
+                const el =document.getElementById("msg-"+id);
+                el.innerText = "✅ Copié";
+                //alert("Adresse copiée !");
+                    setTimeout(() => {
+                      el.innerText = "";
+                    }, 2000);
                 
               });
             }
@@ -1464,7 +1449,8 @@ app.get("/", (req, res) => {
          <pre>${logs.join("\n")}</pre>
       </div>
       <div class="box">
-         <p><b>Connexions actives :</b> ${connectionCount}</p>
+         <p><b>Connexions actives :</b> ${sockets.size}</p>
+         <p><b>Connexions totales depuis démarrage :</b> ${connectionCount}</p>
       </div>
       <div class="box">
          <ul>
