@@ -7,6 +7,8 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
 import express from "express";
 let logs = [];
+// Pour indiquer que le nœud est en train de s’arrêter
+let shuttingDown = false;
 
 /*
 ════════════════════════════════════════
@@ -132,7 +134,6 @@ let mempool = [];
 
 let balances = {};
 
-
 function renderBalances() {
   if (Object.keys(balances).length === 0) {
     return "<p>Aucun solde disponible.</p>";
@@ -149,6 +150,141 @@ function renderBalances() {
     </ul>
   `;
 }
+
+/*
+════════════════════════════════════════
+      Système de messagerie éphémère
+════════════════════════════════════════
+- Messages temporaires pour les notifications
+- Affichés dans le dashboard web et ne reste que 2 minutes
+*/
+
+const ephemeralInbox = [];
+const MAIL_TTL = 2 * 60 * 1000; // 2 minutes
+
+//Function de netoyage des messages expirés
+setInterval(() => {
+  const now = Date.now();
+  while (
+    ephemeralInbox.length > 0 &&
+    now - ephemeralInbox[0].timestamp > MAIL_TTL
+  ) {
+    ephemeralInbox.shift();
+  }
+}, 10000);
+// Fonction de déchiffrement des mails (placeholder)
+function tryDecryptMail(packet) {
+  try {
+    const clear = decryptPayload(packet.payload);
+    return clear;
+  } catch (e) {
+    log(`❌ Erreur de déchiffrement du mail: ${e.message}`);
+    return null;
+  }
+}
+// SendMail Functioon
+function sendMail(toPubKey, text) {
+  const clearPacket = {
+    from: publicKey,
+    text,
+    timestamp: Date.now(),
+  };
+
+  const encryptedPayload = encryptForRecipient(toPubKey, clearPacket);
+
+  broadcast({
+    type: "MAIL",
+    payload: encryptedPayload,
+  });
+
+  log("📤 Mail envoyé (éphémère)");
+}
+// Render mail ephemere
+function renderInbox() {
+  if (ephemeralInbox.length === 0) {
+    return "<p>Aucun message.</p>";
+  }
+
+  return `
+    <ul>
+      ${ephemeralInbox
+        .map(
+          (m) => `
+        <li>
+          <b>From:</b> ${m.from.slice(0, 20)}...<br>
+          <b>Msg:</b> ${m.text}
+        </li>
+      `,
+        )
+        .join("")}
+    </ul>
+  `;
+}
+
+function deriveSharedSecret(myPrivKeyHex, theirPubKeyHex) {
+  const priv = Buffer.from(myPrivKeyHex, "hex");
+  const pub = Buffer.from(theirPubKeyHex, "hex");
+
+  const shared = secp256k1.getSharedSecret(priv, pub, true);
+
+  // On hash pour obtenir une clé AES 32 bytes
+  return crypto.createHash("sha256").update(shared).digest();
+}
+
+function encryptForRecipient(toPubKeyHex, obj) {
+  const key = deriveSharedSecret(privateKey, toPubKeyHex);
+
+  const iv = crypto.randomBytes(12);
+
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+
+  const plaintext = Buffer.from(JSON.stringify(obj));
+
+  let encrypted = cipher.update(plaintext);
+  encrypted = Buffer.concat([encrypted, cipher.final()]);
+
+  const tag = cipher.getAuthTag();
+
+  return Buffer.concat([iv, tag, encrypted]).toString("base64");
+}
+
+function decryptPayload(payloadB64) {
+  const data = Buffer.from(payloadB64, "base64");
+
+  const iv = data.slice(0, 12);
+  const tag = data.slice(12, 28);
+  const encrypted = data.slice(28);
+
+  // Ici on ne connaît pas l’expéditeur → on tente avec tous les pubs connus
+  for (const senderPub of getKnownAddresses()) {
+    try {
+      const key = deriveSharedSecret(privateKey, senderPub);
+
+      const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+      decipher.setAuthTag(tag);
+
+      let decrypted = decipher.update(encrypted);
+      decrypted = Buffer.concat([decrypted, decipher.final()]);
+
+      return JSON.parse(decrypted.toString());
+    } catch {}
+  }
+
+  throw new Error("Not for me");
+}
+
+function broadcast(message) {
+
+   if (shuttingDown) return;
+  peers
+    .filter((p) => p !== nodeID)
+    .forEach((peer) => {
+      sendMessage(peer, message);
+    });
+}
+
+
+
 
 /*
 ════════════════════════════════════════
@@ -277,7 +413,7 @@ function signTransaction(tx, privateKeyHex) {
   return Buffer.from(signature).toString("hex");
 }
 
-log( ">> Public key length = " + publicKey.length);
+log(">> Public key length = " + publicKey.length);
 
 function verifyTransaction(tx) {
   if (!tx.signature || !tx.from) return false;
@@ -321,7 +457,7 @@ function forgeBlock() {
     log(`>> ⏸️ Mempool vide, rien à forger`);
     return;
   }
-  log(`>> ⛏️ Forgeage en cours...`); 
+  log(`>> ⛏️ Forgeage en cours...`);
 
   log("FORGEBLOCK ENTERED");
 
@@ -370,9 +506,6 @@ function forgeBlock() {
   for (const tx of block.data.transactions) {
     applyTransaction(tx, balances);
   }
-
-
-
 
   /*
       ════════════════════════════════════════
@@ -490,7 +623,7 @@ function verifyBlockSignature(block) {
 */
 
 function createGenesisBlock() {
-  const timestamp =  "2024-01-01";                   //Date.parse("2024-01-01");
+  const timestamp = "2024-01-01"; //Date.parse("2024-01-01");
   const data = { message: "Genesis Block - Buyabuya" };
 
   return {
@@ -691,7 +824,6 @@ function handleMessage(msg, socket = null) {
       socket.end();
       break;
     }
-
     // Réception d’une liste de blocs manquants
     case "BLOCKS": {
       log(`>> 📥 ${msg.blocks.length} blocs reçus (sync incrémental)`);
@@ -740,7 +872,6 @@ function handleMessage(msg, socket = null) {
       log(">> 🟢 Sync incrémental terminé");
       break;
     }
-
     // Réception d’une blockchain complète
     case "FULL_CHAIN":
       log(
@@ -843,15 +974,13 @@ Donc on doit les retirer du mempool local.
 
       mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
 
-      // Application des transactions du bloc aux soldes 
+      // Application des transactions du bloc aux soldes
       // for (const tx of block.data.transactions) { applyTransaction(tx, balances);}
 
       log(`>> ➕ Bloc ajouté`);
       break;
     }
-
     // Réception d’une nouvelle transaction
-
     case "NEW_TX": {
       const tx = msg.tx;
       if (txAlreadyInChain(tx.id)) return;
@@ -900,6 +1029,24 @@ Donc on doit les retirer du mempool local.
 
       break;
     }
+    case "MAIL": {
+      log(">>📩 Packet MAIL reçu");
+      const decrypted = tryDecryptMail(msg);
+
+      if (!decrypted) {
+        // Pas pour moi → on ignore
+        return;
+      }
+      log("✅ Mail déchiffré !");
+      log(`📨 Message: ${decrypted.text}`);
+      ephemeralInbox.push({
+        from: decrypted.from,
+        text: decrypted.text,
+        timestamp: Date.now(),
+      });
+      log("📩 Nouveau mail reçu !");
+      return;
+    }
   }
 }
 
@@ -931,9 +1078,8 @@ const server = net.createServer((socket) => {
   // 🔒 Gestion de la fermeture de connexion
   socket.on("close", () => {
     sockets.delete(socket);
-     connectionCount--;                                           //
+    connectionCount--; //
     log(`❌ Connexion fermée → actives: ${sockets.size}`);
-    
   });
 
   // 📴 Fin propre
@@ -1040,6 +1186,7 @@ function startNode() {
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
+
 function renderNodeAddress() {
   return `
     <div class="addr">
@@ -1133,7 +1280,6 @@ function getWealthChartData() {
   return { labels, values };
 }
 
-
 function getSpendingChartData(wallet) {
   let spendingPerDay = {};
 
@@ -1202,9 +1348,9 @@ function renderKnownNodes() {
   return `
   <ul>
    ${addrs
-   .map((addr, i) => {
-   const label = `node${alphabet[i] || i}`;
-   return `
+     .map((addr, i) => {
+       const label = `node${alphabet[i] || i}`;
+       return `
    <li style="margin-bottom:5px;">
       <b>${label}</b><br>
       <code style="font-size:12px;">${addr}</code><br>
@@ -1219,14 +1365,13 @@ function renderKnownNodes() {
       <span id="msg-${i}" style="margin-left:6px; color:green;"></span>
    </li>
    `;
-   })
-   .join("")}
+     })
+     .join("")}
 </ul>
   `;
 }
 
 function notifyPeer(peer, message) {
-
   let host = peer;
   let port = P2P_PORT;
 
@@ -1258,7 +1403,7 @@ function gracefulShutdown() {
   log("📌 Début arrêt...");
   log("📢 Notification des peers...");
   broadcastShutdown();
-//
+  //
 
   // 2. Fermer les sockets actives
   log(`🔌 Fermeture de ${sockets.size} connexions...`);
@@ -1278,9 +1423,10 @@ function gracefulShutdown() {
   log("⏹️ Toutes les boucles stoppées");
 
   // 3. Sauvegarder blockchain si master
- if (nodeID===MASTER_ID) {saveBlockchain()
-  log("✅ Données sauvegardées Master Controle");
- };
+  if (nodeID === MASTER_ID) {
+    saveBlockchain();
+    log("✅ Données sauvegardées Master Controle");
+  }
   //saveMempoolToDisk();
 
   // 4. Fermer serveur TCP
@@ -1295,13 +1441,14 @@ function gracefulShutdown() {
       process.exit(0);
     });
   });
-
+   shuttingDown = true;
 }
 
 function broadcastShutdown() {
-   peers.forEach((peer) => notifyPeer(peer, { type: "NODE_SHUTDOWN", from: nodeID }));
+  peers.forEach((peer) =>
+    notifyPeer(peer, { type: "NODE_SHUTDOWN", from: nodeID }),
+  );
 }
-
 
 app.get("/", (req, res) => {
   const wealth = getWealthChartData();
@@ -1451,14 +1598,35 @@ app.get("/", (req, res) => {
       <div class="box">
          <ul>
             ${Object.entries(stats)
-            .map(
-            ([wallet, count]) => `
+              .map(
+                ([wallet, count]) => `
             <li>${wallet.slice(0, 12)}... : ${count} tx</li>
             `,
-            )
-            .join("")}
+              )
+              .join("")}
          </ul>
       </div>
+      <div class="box">
+           <h3>📬 Inbox éphémère</h3>
+           ${renderInbox()}
+      </div>
+<div class="box">
+  <h3>✉️ Envoyer un message</h3>
+
+  <form method="POST" action="/mail">
+    
+    <p>Destinataire (clé publique)</p>
+    <textarea name="to" rows="2" style="width:100%;"></textarea>
+
+    <p>Message</p>
+    <textarea name="text" rows="3" style="width:100%;"></textarea>
+
+    <br><br>
+    <button type="submit">📨 Envoyer</button>
+  </form>
+</div>
+
+
       <div class="box">
          <h3>🥧 Répartition des richesses</h3>
          <canvas id="pieChart"></canvas>
@@ -1589,6 +1757,22 @@ app.post("/shutdown", (req, res) => {
 
   gracefulShutdown();
 });
+
+app.post("/mail", (req, res) => {
+  const { to, text } = req.body;
+
+  if (!to || !text) {
+    log("❌ Mail incomplet");
+    return res.redirect("/");
+  }
+
+  sendMail(to.trim(), text.trim());
+
+  log("📤 Message envoyé depuis le dashboard");
+
+  res.redirect("/");
+});
+
 
 process.on("SIGINT", () => {
   log("⚠️ Ctrl+C détecté → arrêt propre...");
