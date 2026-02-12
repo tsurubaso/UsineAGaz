@@ -737,7 +737,8 @@ function recalculateBalances() {
 ════════════════════════════════════════
 Utilisé pour envoyer des messages
 et recevoir les réponses
-*/
+*////////////////////////////////////////////////////////////////////////socket.write(JSON.stringify(...), () => socket.end());
+
 
 function sendMessage(target, message) {
   let host = target;
@@ -759,9 +760,10 @@ function sendMessage(target, message) {
     log(`>> 📤 data traitées pour ${host}:${port}`);
     try {
       const msg = JSON.parse(data.toString());
-      handleMessage(msg);
-    } catch {}
-    client.end();
+      handleMessage(msg, client);
+    }  catch (err) {
+    log("Erreur JSON:", err);
+  }
   });
 
   client.on("error", (err) => {
@@ -781,7 +783,7 @@ function txAlreadyInChain(txid) {
 ════════════════════════════════════════
 Toute la logique réseau est centralisée ici
 */
-
+///////////////////////////////////////////////////////////////////////////socket.write(JSON.stringify(...), () => socket.end());
 function handleMessage(msg, socket = null) {
   if (!msg || !msg.type) return;
 
@@ -1043,18 +1045,14 @@ Donc on doit les retirer du mempool local.
           timestamp: Date.now(),
         });
         log("📩 Nouveau mail reçu !");
-        socket.end();
         return;
       }
     }
   } catch (err) {
     log("Erreur handleMessage:", err);
-    if (socket) socket.end();
-  } finally {
-    if (socket && !socket.destroyed) {
-      socket.end();
-    }
-  }
+    
+  } 
+  
 }
 
 /*
@@ -1397,7 +1395,7 @@ function notifyPeer(peer, message) {
 
   client.on("connect", () => {
     client.write(JSON.stringify(message));
-    client.end(); // 👋 terminé direct
+  
   });
 
   client.on("timeout", () => {
