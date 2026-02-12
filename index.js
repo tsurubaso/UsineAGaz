@@ -1053,6 +1053,7 @@ Donc on doit les retirer du mempool local.
     }
   } catch (err) {
     log("Erreur handleMessage:", err);
+    socket.end()
   } finally {
     if (socket && !socket.destroyed) {
       socket.end();
@@ -1786,6 +1787,7 @@ app.post("/mail", (req, res) => {
 process.on("SIGINT", () => {
   log("⚠️ Ctrl+C détecté → arrêt propre...");
   log("⚠️ Shutdown Brutal...");
+  gracefulShutdown()
 });
 
 let webServer;
