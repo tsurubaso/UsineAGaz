@@ -35,7 +35,7 @@ On va beaucoup loger.
 
 function log(message) {
   const line = `[${nodeID}] ${message}`;
-  console.log(line);
+  log(line);
 
   logs.push(line);
 
@@ -746,8 +746,8 @@ et recevoir les réponses
 function sendMessage(target, message) {
   let host = target;
   let port = P2P_PORT;
-  console.log("Sending message to " + target);
-  console.log("Using port " + port);
+  log("Sending message to " + target);
+  log("Using port " + port);
 
   // Mode IP : "192.168.0.112:5000"
   if (target.includes(":")) {
@@ -1067,7 +1067,7 @@ const server = net.createServer((socket) => {
 
   // 📩 Réception de données
   socket.on("data", (data) => {
-    console.log("📩 RAW data reçue");
+    log("📩 RAW data reçue");
     try {
       const msg = JSON.parse(data.toString());
       handleMessage(msg, socket);
@@ -1703,7 +1703,7 @@ app.get("/", (req, res) => {
 });
 
 app.post("/tx", (req, res) => {
-  console.log(req.body);
+  log(req.body);
   const { to, amount } = req.body;
 
   // Validation simple pour éviter les crashs
