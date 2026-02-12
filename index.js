@@ -1158,17 +1158,17 @@ function startNode() {
     peers.forEach((peer) =>
       sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
     );
-  }, 10000);
+  }, 20000);
 
   // MASTER
   if (nodeID === MASTER_ID) {
     bootstrapTimeout = setTimeout(() => {
       bootstrapMoney();
-    }, 15000);
+    }, 25000);
 
     forgeInterval = setInterval(() => {
       forgeBlock();
-    }, 14000);
+    }, 24000);
   }
 
   // FOLLOWER
@@ -1187,7 +1187,7 @@ function startNode() {
           index: lastIndex,
         }),
       );
-    }, 20000);
+    }, 30000);
   }
 }
 
