@@ -798,8 +798,8 @@ function handleMessage(msg, socket = null) {
             chain: blockchain,
           }),
         );
-        socket.end(); // ✅ IMPORTANT
         break;
+
       // Demande partielle : "Donne-moi les blocs après un index"
       case "GET_BLOCKS_FROM": {
         if (!blockchain.length) return;
@@ -818,7 +818,6 @@ function handleMessage(msg, socket = null) {
           }),
         );
 
-        socket.end();
         break;
       }
       // Réception d’une liste de blocs manquants
@@ -867,7 +866,6 @@ function handleMessage(msg, socket = null) {
         }
 
         log(">> 🟢 Sync incrémental terminé");
-        socket.end();
         break;
       }
       // Réception d’une blockchain complète
@@ -899,7 +897,6 @@ function handleMessage(msg, socket = null) {
 
         isSyncing = false;
         log(`>> 🟢 Synchronisation terminée et soldes mis à jour`);
-        socket.end();
         break;
       // Réception d’un nouveau bloc
       case "NEW_BLOCK": {
@@ -979,7 +976,6 @@ Donc on doit les retirer du mempool local.
         // for (const tx of block.data.transactions) { applyTransaction(tx, balances);}
 
         log(`>> ➕ Bloc ajouté`);
-        socket.end();
         break;
       }
       // Réception d’une nouvelle transaction
@@ -1028,7 +1024,7 @@ Donc on doit les retirer du mempool local.
             tx,
           }),
         );
-        socket.end();
+
         break;
       }
       case "MAIL": {
@@ -1053,7 +1049,7 @@ Donc on doit les retirer du mempool local.
     }
   } catch (err) {
     log("Erreur handleMessage:", err);
-    socket.end()
+    if (socket) socket.end();
   } finally {
     if (socket && !socket.destroyed) {
       socket.end();
@@ -1075,12 +1071,13 @@ const server = net.createServer((socket) => {
   log(`🔌 Nouvelle connexion`);
   log(`📌 Total connexions depuis démarrage: ${connectionCount}`);
   log(`🟢 Connexions actives: ${sockets.size}`);
-
+  let buffer = "";
   // 📩 Réception de données
-  socket.on("data", (data) => {
+  socket.on("data", (chunk) => {
+    buffer += chunk.toString();
     log("📩 RAW data reçue");
     try {
-      const msg = JSON.parse(data.toString());
+      const msg = JSON.parse(buffer);
       handleMessage(msg, socket);
     } catch (err) {
       log("❌ JSON invalide reçu");
@@ -1787,7 +1784,7 @@ app.post("/mail", (req, res) => {
 process.on("SIGINT", () => {
   log("⚠️ Ctrl+C détecté → arrêt propre...");
   log("⚠️ Shutdown Brutal...");
-  gracefulShutdown()
+  gracefulShutdown();
 });
 
 let webServer;
