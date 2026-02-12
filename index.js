@@ -35,7 +35,7 @@ On va beaucoup loger.
 
 function log(message) {
   const line = `[${nodeID}] ${message}`;
-  log(line);
+  console.log(line);
 
   logs.push(line);
 
@@ -274,17 +274,13 @@ function decryptPayload(payloadB64) {
 }
 
 function broadcast(message) {
-
-   if (shuttingDown) return;
+  if (shuttingDown) return;
   peers
     .filter((p) => p !== nodeID)
     .forEach((peer) => {
       sendMessage(peer, message);
     });
 }
-
-
-
 
 /*
 ════════════════════════════════════════
@@ -789,55 +785,157 @@ Toute la logique réseau est centralisée ici
 function handleMessage(msg, socket = null) {
   if (!msg || !msg.type) return;
 
-  switch (msg.type) {
-    // Un peer demande notre blockchain
-    case "GET_CHAIN":
-      if (!blockchain.length) return;
+  try {
+    switch (msg.type) {
+      // Un peer demande notre blockchain
+      case "GET_CHAIN":
+        if (!blockchain.length) return;
 
-      socket?.write(
-        JSON.stringify({
-          type: "FULL_CHAIN",
-          from: nodeID,
-          chain: blockchain,
-        }),
-      );
-      socket.end(); // ✅ IMPORTANT
-      break;
-    // Demande partielle : "Donne-moi les blocs après un index"
-    case "GET_BLOCKS_FROM": {
-      if (!blockchain.length) return;
+        socket?.write(
+          JSON.stringify({
+            type: "FULL_CHAIN",
+            from: nodeID,
+            chain: blockchain,
+          }),
+        );
+        socket.end(); // ✅ IMPORTANT
+        break;
+      // Demande partielle : "Donne-moi les blocs après un index"
+      case "GET_BLOCKS_FROM": {
+        if (!blockchain.length) return;
 
-      const startIndex = msg.index + 1;
+        const startIndex = msg.index + 1;
 
-      log(`>> 📤 GET_BLOCKS_FROM reçu → envoi blocs depuis #${startIndex}`);
+        log(`>> 📤 GET_BLOCKS_FROM reçu → envoi blocs depuis #${startIndex}`);
 
-      const missingBlocks = blockchain.slice(startIndex);
+        const missingBlocks = blockchain.slice(startIndex);
 
-      socket.write(
-        JSON.stringify({
-          type: "BLOCKS",
-          from: nodeID,
-          blocks: missingBlocks,
-        }),
-      );
+        socket.write(
+          JSON.stringify({
+            type: "BLOCKS",
+            from: nodeID,
+            blocks: missingBlocks,
+          }),
+        );
 
-      socket.end();
-      break;
-    }
-    // Réception d’une liste de blocs manquants
-    case "BLOCKS": {
-      log(`>> 📥 ${msg.blocks.length} blocs reçus (sync incrémental)`);
+        socket.end();
+        break;
+      }
+      // Réception d’une liste de blocs manquants
+      case "BLOCKS": {
+        log(`>> 📥 ${msg.blocks.length} blocs reçus (sync incrémental)`);
 
-      for (const block of msg.blocks) {
-        const last = blockchain[blockchain.length - 1];
+        for (const block of msg.blocks) {
+          const last = blockchain[blockchain.length - 1];
 
-        // Vérification chaînage
-        if (block.previousHash !== last.hash) {
-          log(">> ❌ Chaîne cassée → resync FULL_CHAIN nécessaire");
+          // Vérification chaînage
+          if (block.previousHash !== last.hash) {
+            log(">> ❌ Chaîne cassée → resync FULL_CHAIN nécessaire");
+            return;
+          }
+
+          // Vérification hash
+          const hash = calculateHash(
+            block.index,
+            block.previousHash,
+            block.timestamp,
+            block.data,
+          );
+
+          if (hash !== block.hash) {
+            log(">> ❌ Hash invalide → bloc rejeté");
+            return;
+          }
+
+          // Vérification Proof of Authority
+          if (!verifyBlockSignature(block)) {
+            log(">> ❌ Bloc rejeté : signature non autorisée");
+            return;
+          }
+
+          // Ajout bloc
+          blockchain.push(block);
+
+          // Application des transactions
+          if (block.data?.transactions) {
+            block.data.transactions.forEach((tx) =>
+              applyTransaction(tx, balances),
+            );
+          }
+
+          log(`>> ✅ Bloc #${block.index} ajouté via rattrapage`);
+        }
+
+        log(">> 🟢 Sync incrémental terminé");
+        socket.end();
+        break;
+      }
+      // Réception d’une blockchain complète
+      case "FULL_CHAIN":
+        log(
+          `>> 📥 Chaîne reçue de ${msg.from} (Taille : ${msg.chain.length} blocs)`,
+        );
+
+        if (msg.chain.length > 0) {
+          const firstBlock = msg.chain[0];
+          const lastBlock = msg.chain[msg.chain.length - 1];
+          log(
+            `>> [Vérification] Index 0 hash: ${firstBlock.hash?.slice(0, 10)}...`,
+          );
+          log(
+            `>> [Vérification] Dernier index: ${lastBlock.index} (Hash: ${lastBlock.hash?.slice(0, 10)}...)`,
+          );
+        }
+
+        if (!isValidChain(msg.chain)) {
+          log(`>> ❌ Chaîne invalide ou corrompue !`);
           return;
         }
 
-        // Vérification hash
+        blockchain = chooseBestChain(blockchain, msg.chain);
+
+        // RECALCUL DES SOLDES après synchro
+        recalculateBalances();
+
+        isSyncing = false;
+        log(`>> 🟢 Synchronisation terminée et soldes mis à jour`);
+        socket.end();
+        break;
+      // Réception d’un nouveau bloc
+      case "NEW_BLOCK": {
+        if (isSyncing) return;
+
+        const block = msg.block;
+        const last = blockchain[blockchain.length - 1];
+        if (!last) return;
+
+        // 🚨 Bloc en avance → il manque un maillon
+        if (block.index > last.index + 1) {
+          log(
+            `>> ⚠️ Bloc reçu trop loin (#${block.index}), je suis à #${last.index}`,
+          );
+
+          // Demande des blocs manquants
+          peers.forEach((peer) =>
+            sendMessage(peer, {
+              type: "GET_BLOCKS_FROM",
+              from: nodeID,
+              index: last.index,
+            }),
+          );
+
+          return;
+        }
+
+        // Bloc déjà connu ou trop vieux
+        if (block.index <= last.index) return;
+
+        // Bloc normal attendu
+        if (block.previousHash !== last.hash) return;
+
+        if (block.index !== last.index + 1 || block.previousHash !== last.hash)
+          return;
+
         const hash = calculateHash(
           block.index,
           block.previousHash,
@@ -845,122 +943,23 @@ function handleMessage(msg, socket = null) {
           block.data,
         );
 
-        if (hash !== block.hash) {
-          log(">> ❌ Hash invalide → bloc rejeté");
-          return;
-        }
+        if (hash !== block.hash) return;
+        if (!verifyBlockSignature(block)) return;
 
-        // Vérification Proof of Authority
-        if (!verifyBlockSignature(block)) {
-          log(">> ❌ Bloc rejeté : signature non autorisée");
-          return;
-        }
+        // NOTE: plus tard, il faudra retirer du mempool
+        // les transactions incluses dans ce bloc
 
-        // Ajout bloc
         blockchain.push(block);
 
-        // Application des transactions
-        if (block.data?.transactions) {
-          block.data.transactions.forEach((tx) =>
-            applyTransaction(tx, balances),
-          );
+        // CRUCIAL : Mettre à jour les soldes avec les transactions du nouveau bloc
+        if (block.data && block.data.transactions) {
+          block.data.transactions.forEach((tx) => {
+            applyTransaction(tx, balances);
+          });
+          log(`>> 💰 Soldes mis à jour après le bloc #${block.index}`);
         }
 
-        log(`>> ✅ Bloc #${block.index} ajouté via rattrapage`);
-      }
-
-      log(">> 🟢 Sync incrémental terminé");
-      break;
-    }
-    // Réception d’une blockchain complète
-    case "FULL_CHAIN":
-      log(
-        `>> 📥 Chaîne reçue de ${msg.from} (Taille : ${msg.chain.length} blocs)`,
-      );
-
-      if (msg.chain.length > 0) {
-        const firstBlock = msg.chain[0];
-        const lastBlock = msg.chain[msg.chain.length - 1];
-        log(
-          `>> [Vérification] Index 0 hash: ${firstBlock.hash?.slice(0, 10)}...`,
-        );
-        log(
-          `>> [Vérification] Dernier index: ${lastBlock.index} (Hash: ${lastBlock.hash?.slice(0, 10)}...)`,
-        );
-      }
-
-      if (!isValidChain(msg.chain)) {
-        log(`>> ❌ Chaîne invalide ou corrompue !`);
-        return;
-      }
-
-      blockchain = chooseBestChain(blockchain, msg.chain);
-
-      // RECALCUL DES SOLDES après synchro
-      recalculateBalances();
-
-      isSyncing = false;
-      log(`>> 🟢 Synchronisation terminée et soldes mis à jour`);
-      break;
-    // Réception d’un nouveau bloc
-    case "NEW_BLOCK": {
-      if (isSyncing) return;
-
-      const block = msg.block;
-      const last = blockchain[blockchain.length - 1];
-      if (!last) return;
-
-      // 🚨 Bloc en avance → il manque un maillon
-      if (block.index > last.index + 1) {
-        log(
-          `>> ⚠️ Bloc reçu trop loin (#${block.index}), je suis à #${last.index}`,
-        );
-
-        // Demande des blocs manquants
-        peers.forEach((peer) =>
-          sendMessage(peer, {
-            type: "GET_BLOCKS_FROM",
-            from: nodeID,
-            index: last.index,
-          }),
-        );
-
-        return;
-      }
-
-      // Bloc déjà connu ou trop vieux
-      if (block.index <= last.index) return;
-
-      // Bloc normal attendu
-      if (block.previousHash !== last.hash) return;
-
-      if (block.index !== last.index + 1 || block.previousHash !== last.hash)
-        return;
-
-      const hash = calculateHash(
-        block.index,
-        block.previousHash,
-        block.timestamp,
-        block.data,
-      );
-
-      if (hash !== block.hash) return;
-      if (!verifyBlockSignature(block)) return;
-
-      // NOTE: plus tard, il faudra retirer du mempool
-      // les transactions incluses dans ce bloc
-
-      blockchain.push(block);
-
-      // CRUCIAL : Mettre à jour les soldes avec les transactions du nouveau bloc
-      if (block.data && block.data.transactions) {
-        block.data.transactions.forEach((tx) => {
-          applyTransaction(tx, balances);
-        });
-        log(`>> 💰 Soldes mis à jour après le bloc #${block.index}`);
-      }
-
-      /*
+        /*
 ═══════════════════════════════════════
       NETTOYAGE DU MEMPOOL (FOLLOWERS)
 ═══════════════════════════════════════
@@ -970,82 +969,93 @@ toutes ses transactions deviennent confirmées.
 Donc on doit les retirer du mempool local.
 */
 
-      const confirmedIds = new Set(block.data.transactions.map((tx) => tx.id));
+        const confirmedIds = new Set(
+          block.data.transactions.map((tx) => tx.id),
+        );
 
-      mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
+        mempool = mempool.filter((tx) => !confirmedIds.has(tx.id));
 
-      // Application des transactions du bloc aux soldes
-      // for (const tx of block.data.transactions) { applyTransaction(tx, balances);}
+        // Application des transactions du bloc aux soldes
+        // for (const tx of block.data.transactions) { applyTransaction(tx, balances);}
 
-      log(`>> ➕ Bloc ajouté`);
-      break;
+        log(`>> ➕ Bloc ajouté`);
+        socket.end();
+        break;
+      }
+      // Réception d’une nouvelle transaction
+      case "NEW_TX": {
+        const tx = msg.tx;
+        if (txAlreadyInChain(tx.id)) return;
+        if (!tx) {
+          log(">> ❌ ERREUR : Message NEW_TX reçu sans objet transaction");
+          return;
+        }
+        log(
+          `>> 💸 Tentative TX: From ${tx.from?.slice(0, 8)} To ${tx.to?.slice(0, 8)} Amount: ${tx.amount}`,
+        );
+
+        // 1. Vérification cryptographique
+        if (!verifyTransaction(tx)) {
+          log(`>> ❌ Transaction invalide`);
+          return;
+        }
+
+        // Vérification économique
+        if (!isTransactionEconomicallyValid(tx, balances)) {
+          log(`>> ❌ Solde insuffisant pour la transaction`);
+          return;
+        }
+
+        // 2. Création de l’identifiant canonique
+        if (!tx.id) {
+          tx.id = createTransactionId(tx);
+        }
+
+        // 3. Anti-doublon (par ID uniquement)
+        if (mempool.find((t) => t.id === tx.id)) {
+          return;
+        }
+
+        // 4. Ajout au mempool
+        mempool.push(tx);
+        log(`>> 💸 Transaction acceptée (${mempool.length})`);
+
+        // 5. Propagation réseau
+        peers.forEach((peer) =>
+          sendMessage(peer, {
+            type: "NEW_TX",
+            from: nodeID,
+            tx,
+          }),
+        );
+        socket.end();
+        break;
+      }
+      case "MAIL": {
+        log(">>📩 Packet MAIL reçu");
+        const decrypted = tryDecryptMail(msg);
+
+        if (!decrypted) {
+          // Pas pour moi → on ignore
+          return;
+        }
+        log("✅ Mail déchiffré !");
+        log(`📨 Message: ${decrypted.text}`);
+        ephemeralInbox.push({
+          from: decrypted.from,
+          text: decrypted.text,
+          timestamp: Date.now(),
+        });
+        log("📩 Nouveau mail reçu !");
+        socket.end();
+        return;
+      }
     }
-    // Réception d’une nouvelle transaction
-    case "NEW_TX": {
-      const tx = msg.tx;
-      if (txAlreadyInChain(tx.id)) return;
-      if (!tx) {
-        log(">> ❌ ERREUR : Message NEW_TX reçu sans objet transaction");
-        return;
-      }
-      log(
-        `>> 💸 Tentative TX: From ${tx.from?.slice(0, 8)} To ${tx.to?.slice(0, 8)} Amount: ${tx.amount}`,
-      );
-
-      // 1. Vérification cryptographique
-      if (!verifyTransaction(tx)) {
-        log(`>> ❌ Transaction invalide`);
-        return;
-      }
-
-      // Vérification économique
-      if (!isTransactionEconomicallyValid(tx, balances)) {
-        log(`>> ❌ Solde insuffisant pour la transaction`);
-        return;
-      }
-
-      // 2. Création de l’identifiant canonique
-      if (!tx.id) {
-        tx.id = createTransactionId(tx);
-      }
-
-      // 3. Anti-doublon (par ID uniquement)
-      if (mempool.find((t) => t.id === tx.id)) {
-        return;
-      }
-
-      // 4. Ajout au mempool
-      mempool.push(tx);
-      log(`>> 💸 Transaction acceptée (${mempool.length})`);
-
-      // 5. Propagation réseau
-      peers.forEach((peer) =>
-        sendMessage(peer, {
-          type: "NEW_TX",
-          from: nodeID,
-          tx,
-        }),
-      );
-
-      break;
-    }
-    case "MAIL": {
-      log(">>📩 Packet MAIL reçu");
-      const decrypted = tryDecryptMail(msg);
-
-      if (!decrypted) {
-        // Pas pour moi → on ignore
-        return;
-      }
-      log("✅ Mail déchiffré !");
-      log(`📨 Message: ${decrypted.text}`);
-      ephemeralInbox.push({
-        from: decrypted.from,
-        text: decrypted.text,
-        timestamp: Date.now(),
-      });
-      log("📩 Nouveau mail reçu !");
-      return;
+  } catch (err) {
+    log("Erreur handleMessage:", err);
+  } finally {
+    if (socket && !socket.destroyed) {
+      socket.end();
     }
   }
 }
@@ -1185,7 +1195,6 @@ function startNode() {
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
-
 
 function renderNodeAddress() {
   return `
@@ -1441,7 +1450,7 @@ function gracefulShutdown() {
       process.exit(0);
     });
   });
-   shuttingDown = true;
+  shuttingDown = true;
 }
 
 function broadcastShutdown() {
@@ -1563,6 +1572,7 @@ app.get("/", (req, res) => {
          <button onclick="shutdownNode()" style="background:red;color:white;padding:8px;">
          Stop Node
          </button>
+         
       </div>
       <div class="box">
          <h3>💰 Balances</h3>
@@ -1772,7 +1782,6 @@ app.post("/mail", (req, res) => {
 
   res.redirect("/");
 });
-
 
 process.on("SIGINT", () => {
   log("⚠️ Ctrl+C détecté → arrêt propre...");
