@@ -1109,26 +1109,29 @@ const server = net.createServer((socket) => {
 */
 
 switch (NETWORK_MODE) {
+  
   // En mode IP, on écoute sur toutes les interfaces réseau
   // pour permettre aux autres PC du LAN de se connecter
 
   case "docker":
+    log(NETWORK_MODE)
     server.listen(P2P_PORT, () => {
-      log(`>> 🟢 Serveur P2P actif sur port ${P2P_PORT}`);
+      log(`>> 🟢 Serveur Docker P2P actif sur port ${P2P_PORT}`);
       startNode();
     });
     break;
 
   case "ip":
+    log(NETWORK_MODE)
     server.listen(P2P_PORT, "0.0.0.0", () => {
-      log(`>> 🟢 Serveur P2P actif sur port ${P2P_PORT}`);
+      log(`>> 🟢 Serveur IP P2P actif sur port ${P2P_PORT}`);
       startNode();
     });
     break;
 
   default:
     server.listen(P2P_PORT, () => {
-      log(`>> 🟢 Serveur P2P actif sur port ${P2P_PORT}`);
+      log(`>> 🟢 Serveur Default P2P actif sur port ${P2P_PORT}`);
       startNode();
     });
 }
