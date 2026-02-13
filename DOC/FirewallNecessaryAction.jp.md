@@ -1,3 +1,5 @@
+ Back to README: [English](../README) | [Français](README.fr.md) | [日本語](README.ja.md)
+
 
 
 Windows上でノード同士が特定のTCPポート（例：5001、5002）で通信できるようにするには、**Windows Defender ファイアウォール**で受信・送信トラフィックを許可するルールを設定する必要があります。以下のコマンドでルールを作成できます。
