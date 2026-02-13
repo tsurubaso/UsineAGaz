@@ -1,4 +1,4 @@
-🌍 言語: [English](./README.md) | [Français](README.fr.md) | [日本語](README.ja.md)
+🌍 言語: [English](../README.md) | [Français](README.fr.md) | [日本語](README.ja.md)
 
 # 🪙 Bouya-Bouya Blockchain 🚀
 
@@ -52,7 +52,7 @@ Bouya-Bouya はミニマルなブロックチェーンです。
 
 # 🛠 インストール & 設定
 
-まず Windows [Firewall](DOC/FirewallNecessaryAction.jp.md)
+まず Windows [Firewall](FirewallNecessaryAction.jp.md)
 
 ## 1. 前提条件
 
