@@ -1,4 +1,4 @@
-🌍 言語: [English](../README.md) | [Français](README.fr.md) | [日本語](README.ja.md)
+🌍 言語: [English](./README.md) | [Français](README.fr.md) | [日本語](README.ja.md)
 
 # 🪙 Bouya-Bouya Blockchain 🚀
 
