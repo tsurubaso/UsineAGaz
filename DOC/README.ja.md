@@ -50,6 +50,22 @@ Bouya-Bouya はミニマルなブロックチェーンです。
 
 ---
 
+## 📚 学習用リポジトリ
+
+このプロジェクトは低レベルなネットワーク概念（TCPストリーム、バッファリング、メッセージ復元）に基づいています。
+
+そのために、小さな教育用リポジトリを作成しました：
+
+👉 **TCP Message Framing（Length Prefix + Buffer + while）**  
+https://github.com/tsurubaso/TCPmogi
+
+📖 ドキュメント：  
+[README を読む](https://github.com/tsurubaso/TCPmogi/blob/main/README.jp.md)
+
+このミニリポジトリでは、TCP通信でJSONが途中で壊れる理由と、安全にメッセージを復元する方法を解説しています。
+
+---
+
 # 🛠 インストール & 設定
 
 まず Windows [Firewall](FirewallNecessaryAction.jp.md)

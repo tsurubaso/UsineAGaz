@@ -1,4 +1,3 @@
-
 🌍 Languages: [English](../README.MD) | [Français](README.fr.md) | [日本語](README.ja.md)
 
 # 🪙 Bouya-Bouya Blockchain 🚀
@@ -12,20 +11,20 @@ Elle implémente les concepts fondamentaux d'un registre distribué : signatures
 
 # 🚀 Fonctionnalités
 
-* **Réseau Hybride** : Support du mode `Docker` (Dev) et du mode `IP` (réseau local).
-* **Consensus & Forge** :
-* **Master (Node1)** : Responsable de la forge des blocs et de la création monétaire.
-* **Followers (NodeX)** : Validation passive, synchronisation et relais.
+- **Réseau Hybride** : Support du mode `Docker` (Dev) et du mode `IP` (réseau local).
+- **Consensus & Forge** :
+- **Master (Node1)** : Responsable de la forge des blocs et de la création monétaire.
+- **Followers (NodeX)** : Validation passive, synchronisation et relais.
 
-* **Sécurité Cryptographique** :
-* Signatures **secp256k1** via `@noble/curves`.
-* Intégrité des blocs par chaînage SHA-256.
+- **Sécurité Cryptographique** :
+- Signatures **secp256k1** via `@noble/curves`.
+- Intégrité des blocs par chaînage SHA-256.
 
-* **Mécanismes de Résilience** :
-* **Polling Périodique** : Les nœuds followers interrogent les pairs toutes les 15 s pour éviter d'être désynchronisés.
-* **Bootstrap Immédiat** : Forgeage d'un "Bloc #1" instantané au démarrage du Master pour injecter la monnaie.
+- **Mécanismes de Résilience** :
+- **Polling Périodique** : Les nœuds followers interrogent les pairs toutes les 15 s pour éviter d'être désynchronisés.
+- **Bootstrap Immédiat** : Forgeage d'un "Bloc #1" instantané au démarrage du Master pour injecter la monnaie.
 
-* **Dashboard Interactif** : Interface Web en temps réel pour monitorer la chaîne, le mempool et envoyer des transactions.
+- **Dashboard Interactif** : Interface Web en temps réel pour monitorer la chaîne, le mempool et envoyer des transactions.
 
 ---
 
@@ -35,13 +34,30 @@ Elle implémente les concepts fondamentaux d'un registre distribué : signatures
 
 Chaque bloc contient un en-tête cryptographique et un corps de données :
 
-* `index`, `previousHash`, `timestamp`, `hash`
-* `signer` & `signature` (Preuve d'autorité du Master)
-* `data.transactions[]` (Liste des transactions confirmées)
+- `index`, `previousHash`, `timestamp`, `hash`
+- `signer` & `signature` (Preuve d'autorité du Master)
+- `data.transactions[]` (Liste des transactions confirmées)
 
 ### Le Ledger (Soldes)
 
 Le solde n'est jamais stocké tel quel. Il est **recalculé dynamiquement** à chaque synchronisation ou réception de bloc en "rejouant" l'historique des transactions.
+
+---
+
+## 📚 Références pédagogiques
+
+Ce projet s’appuie sur des concepts réseau bas niveau (TCP, bufferisation, framing).
+
+Une mini-repository pédagogique dédiée :
+
+👉 **TCP Message Framing (Length-Prefix + Buffer + while)**  
+https://github.com/tsurubaso/TCPmogi
+
+📖 Documentation :  
+[Lire le README](https://github.com/tsurubaso/TCPmogi/blob/main/README.md)
+
+Cette mini-repo explique pourquoi JSON casse en TCP et comment reconstruire des messages correctement.
+
 
 ---
 
@@ -54,9 +70,10 @@ Tout d'abords Windows [Firewall](FirewallNecessaryAction.fr.md)
 ```bash
 npm install express dotenv @noble/curves @noble/hashes crypto-js
 ```
- Pour la création des wallets.
 
-* utilisez "wallet.js" installez elliptic provisoirement et désinstallez
+Pour la création des wallets.
+
+- utilisez "wallet.js" installez elliptic provisoirement et désinstallez
 
 ```bash
 npm install elliptic
@@ -155,7 +172,7 @@ $env:NODE_ID="node2"; $env:P2P_PORT="5002"; $env:WEB_PORT="3002"; node index.js
 
 ## 📌 À savoir
 
-* **Mint** : Seul le Master peut émettre des transactions `from: "MINT"`.
-* **Identifiant** : L'`id` d'une transaction est calculé par `SHA-256(from + to + amount + timestamp)`.
+- **Mint** : Seul le Master peut émettre des transactions `from: "MINT"`.
+- **Identifiant** : L'`id` d'une transaction est calculé par `SHA-256(from + to + amount + timestamp)`.
 
 ---

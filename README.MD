@@ -49,6 +49,22 @@ Balances are never stored directly. They are **dynamically recalculated** at eac
 
 ---
 
+## 📚 Learning Resources
+
+This project is based on low-level networking concepts (TCP streams, buffering, message framing).
+
+I created a small educational repository dedicated to this topic:
+
+👉 **TCP Message Framing (Length-Prefix + Buffer + while)**  
+https://github.com/tsurubaso/TCPmogi
+
+📖 Documentation:  
+[Read the README](https://github.com/tsurubaso/TCPmogi/blob/main/README.en.md)
+
+This mini-repo explains why JSON can break over TCP and how to properly reconstruct complete messages.
+
+---
+
 # 🛠 Installation & Configuration
 
 But first Windows [Firewall](DOC/FirewallNecessaryAction.en.md)

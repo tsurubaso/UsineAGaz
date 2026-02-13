@@ -80,6 +80,8 @@
 
 追跡（ついせき）＝tracking（Gitでも超重要）
 
+符号（ふごう）なし整数 ＝unsigned integer
+
 ---
 
 
