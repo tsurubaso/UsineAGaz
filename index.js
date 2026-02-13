@@ -737,8 +737,7 @@ function recalculateBalances() {
 ════════════════════════════════════════
 Utilisé pour envoyer des messages
 et recevoir les réponses
-*////////////////////////////////////////////////////////////////////////socket.write(JSON.stringify(...), () => socket.end());
-
+*/ ///////////////////////////////////////////////////////////////////////socket.write(JSON.stringify(...), () => socket.end());
 
 function sendMessage(target, message) {
   let host = target;
@@ -760,10 +759,11 @@ function sendMessage(target, message) {
     log(`>> 📤 data traitées pour ${host}:${port}`);
     try {
       const msg = JSON.parse(data.toString());
-      handleMessage(msg, client);
-    }  catch (err) {
-    log("Erreur JSON:", err);
-  }
+      handleMessage(msg);
+    } catch (err) {
+      log("Erreur JSON:", err);
+    }
+    client.end();
   });
 
   client.on("error", (err) => {
@@ -800,6 +800,7 @@ function handleMessage(msg, socket = null) {
             chain: blockchain,
           }),
         );
+        socket.end(); // ✅ IMPORTANT: on ferme la connexion après envoi
         break;
 
       // Demande partielle : "Donne-moi les blocs après un index"
@@ -820,6 +821,7 @@ function handleMessage(msg, socket = null) {
           }),
         );
 
+        socket.end();
         break;
       }
       // Réception d’une liste de blocs manquants
@@ -868,6 +870,7 @@ function handleMessage(msg, socket = null) {
         }
 
         log(">> 🟢 Sync incrémental terminé");
+        socket.end();
         break;
       }
       // Réception d’une blockchain complète
@@ -899,6 +902,7 @@ function handleMessage(msg, socket = null) {
 
         isSyncing = false;
         log(`>> 🟢 Synchronisation terminée et soldes mis à jour`);
+        socket.end();
         break;
       // Réception d’un nouveau bloc
       case "NEW_BLOCK": {
@@ -978,6 +982,7 @@ Donc on doit les retirer du mempool local.
         // for (const tx of block.data.transactions) { applyTransaction(tx, balances);}
 
         log(`>> ➕ Bloc ajouté`);
+        socket.end();
         break;
       }
       // Réception d’une nouvelle transaction
@@ -1026,6 +1031,7 @@ Donc on doit les retirer du mempool local.
             tx,
           }),
         );
+        socket.end();
 
         break;
       }
@@ -1045,14 +1051,18 @@ Donc on doit les retirer du mempool local.
           timestamp: Date.now(),
         });
         log("📩 Nouveau mail reçu !");
+        socket.end();
         return;
       }
     }
   } catch (err) {
     log("Erreur handleMessage:", err);
-    
-  } 
-  
+    socket.end();
+  } finally {
+    if (socket && !socket.destroyed) {
+      socket.end();
+    }
+  }
 }
 
 /*
@@ -1069,13 +1079,12 @@ const server = net.createServer((socket) => {
   log(`🔌 Nouvelle connexion`);
   log(`📌 Total connexions depuis démarrage: ${connectionCount}`);
   log(`🟢 Connexions actives: ${sockets.size}`);
-  let buffer = "";
+  ///////////////////////////////// Il faudra plus tard installer un Buffer pour la version Node: let buffer = "";
   // 📩 Réception de données
-  socket.on("data", (chunk) => {
-    buffer += chunk.toString();
+  socket.on("data", (data) => {
     log("📩 RAW data reçue");
     try {
-      const msg = JSON.parse(buffer);
+      const msg = JSON.parse(data.toString());
       handleMessage(msg, socket);
     } catch (err) {
       log("❌ JSON invalide reçu");
@@ -1107,12 +1116,10 @@ const server = net.createServer((socket) => {
 */
 
 switch (NETWORK_MODE) {
-  
   // En mode IP, on écoute sur toutes les interfaces réseau
   // pour permettre aux autres PC du LAN de se connecter
 
   case "docker":
-    log(NETWORK_MODE)
     server.listen(P2P_PORT, () => {
       log(`>> 🟢 Serveur Docker P2P actif sur port ${P2P_PORT}`);
       startNode();
@@ -1120,7 +1127,6 @@ switch (NETWORK_MODE) {
     break;
 
   case "ip":
-    log(NETWORK_MODE)
     server.listen(P2P_PORT, "0.0.0.0", () => {
       log(`>> 🟢 Serveur IP P2P actif sur port ${P2P_PORT}`);
       startNode();
@@ -1159,17 +1165,17 @@ function startNode() {
     peers.forEach((peer) =>
       sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
     );
-  }, 20000);
+  }, 10000);
 
   // MASTER
   if (nodeID === MASTER_ID) {
     bootstrapTimeout = setTimeout(() => {
       bootstrapMoney();
-    }, 25000);
+    }, 15000);
 
     forgeInterval = setInterval(() => {
       forgeBlock();
-    }, 24000);
+    }, 14000);
   }
 
   // FOLLOWER
@@ -1188,7 +1194,7 @@ function startNode() {
           index: lastIndex,
         }),
       );
-    }, 30000);
+    }, 20000);
   }
 }
 
@@ -1395,7 +1401,7 @@ function notifyPeer(peer, message) {
 
   client.on("connect", () => {
     client.write(JSON.stringify(message));
-  
+    client.end(); // 👋 terminé direct
   });
 
   client.on("timeout", () => {
