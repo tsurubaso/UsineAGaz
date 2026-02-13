@@ -53,7 +53,7 @@ Bouya-Bouya はミニマルなブロックチェーンです。
 # 🛠 インストール & 設定
 
 まず Windows [Firewall](DOC/FirewallNecessaryAction.jp.md)
-まず
+
 ## 1. 前提条件
 
 ```bash
