@@ -1,4 +1,4 @@
- Back to README: [English](../README) | [Français](README.fr.md) | [日本語](README.ja.md)
+ Back to README: [English](../README.md) | [Français](README.fr.md) | [日本語](README.ja.md)
 
 Pour que les nœuds puissent communiquer entre eux sur des ports TCP spécifiques (par exemple 5001 et 5002) sous Windows, il est nécessaire de configurer des règles dans le **Pare-feu Windows Defender** afin d’autoriser le trafic entrant et sortant. Les commandes suivantes permettent de mettre en place ces règles.
 
