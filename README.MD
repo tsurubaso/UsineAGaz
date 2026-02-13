@@ -6,7 +6,7 @@ Welcome! Please choose your language if it is not English:
 - 🇫🇷 Français → [README en Français](DOC/README.fr.md)
 - 🇯🇵 日本語 → [日本語README](DOC/README.ja.md)
 
-
+ 
 ### Distributed P2P Network (Node.js)
 
 Bouya-Bouya is a minimalist blockchain.  

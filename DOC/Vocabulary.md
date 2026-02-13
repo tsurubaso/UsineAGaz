@@ -1,4 +1,4 @@
-🌍 Languages: [English](../README.md) | [Français](README.fr.md) | [日本語](README.ja.md)
+🌍 Languages: [English](../README.MD) | [Français](README.fr.md) | [日本語](README.ja.md)
 
 
 # Vocabulary

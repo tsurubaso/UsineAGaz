@@ -1,4 +1,4 @@
- Back to README: [English](../README.md) | [Français](README.fr.md) | [日本語](README.ja.md)
+ Back to README: [English](../README.MD) | [Français](README.fr.md) | [日本語](README.ja.md)
 
 To allow nodes to communicate with each other on specific TCP ports (e.g., 5001 and 5002) in Windows, it is necessary to configure rules in **Windows Defender Firewall** to allow both inbound and outbound traffic. The following commands set up these rules:
 
