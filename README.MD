@@ -3,8 +3,8 @@
 
 Welcome! Please choose your language if it is not English:
 
-- 🇫🇷 Français → [README en Français](README.fr.md)
-- 🇯🇵 日本語 → [日本語README](README.ja.md)
+- 🇫🇷 Français → [README en Français](DOC/README.fr.md)
+- 🇯🇵 日本語 → [日本語README](DOC/README.ja.md)
 
 
 ### Distributed P2P Network (Node.js)
@@ -50,6 +50,8 @@ Balances are never stored directly. They are **dynamically recalculated** at eac
 ---
 
 # 🛠 Installation & Configuration
+
+But first Windows [Firewall](DOC/FirewallNecessaryAction.en.md)
 
 ## 1. Requirements
 

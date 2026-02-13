@@ -47,6 +47,8 @@ Le solde n'est jamais stocké tel quel. Il est **recalculé dynamiquement** à c
 
 # 🛠 Installation & Configuration
 
+Tout d'abords Windows [Firewall](FirewallNecessaryAction.fr.md)
+
 ## 1. Prérequis
 
 ```bash
