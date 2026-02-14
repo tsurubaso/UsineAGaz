@@ -1149,7 +1149,6 @@ const server = net.createServer((socket) => {
   // 🔒 Gestion de la fermeture de connexion
   socket.on("close", () => {
     sockets.delete(socket);
-    connectionCount--; //
     log(`❌ Connexion fermée → actives: ${sockets.size}`);
   });
 
@@ -1160,7 +1159,6 @@ const server = net.createServer((socket) => {
 
   // ⚠️ Erreur réseau
   socket.on("error", (err) => {
-    connectionCount--;
     log(`>> ❌ Erreur de connexion (Socket) : ${err.message}`);
   });
 });
