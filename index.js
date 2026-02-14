@@ -730,7 +730,7 @@ function recalculateBalances() {
     `>> 💰 Soldes recalculés : ${Object.keys(balances).length} comptes trouvés.`,
   );
 }
-
+  
 /*
 ════════════════════════════════════════
       CLIENT TCP
