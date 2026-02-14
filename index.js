@@ -737,7 +737,33 @@ function recalculateBalances() {
 ════════════════════════════════════════
 Utilisé pour envoyer des messages
 et recevoir les réponses
-*/ ///////////////////////////////////////////////////////////////////////socket.write(JSON.stringify(...), () => socket.end());
+*/
+
+// ==========================================
+// ✅ TCP FRAMING HELPERS (Bouya-Bouya Core)
+// ==========================================
+//
+// Tous les messages sont envoyés sous forme :
+//
+//   [4 bytes longueur][payload JSON]
+//
+// Cela rend le réseau robuste :
+// - JSON jamais coupé
+// - multi-messages supportés
+// - gros blocs OK
+//
+
+function sendFramed(socket, obj) {
+  const json = JSON.stringify(obj);
+  const body = Buffer.from(json);
+
+  // Header fixe : taille du message
+  const header = Buffer.alloc(4);
+  header.writeUInt32BE(body.length, 0);
+
+  // Envoi : header + payload
+  socket.write(Buffer.concat([header, body]));
+}
 
 function sendMessage(target, message) {
   let host = target;
@@ -752,18 +778,27 @@ function sendMessage(target, message) {
   }
 
   const client = net.createConnection({ host, port }, () => {
-    client.write(JSON.stringify(message));
+    sendFramed(client, message);
   });
-
-  client.on("data", (data) => {
+  let buffer = Buffer.alloc(0);
+  client.on("data", (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
     log(`>> 📤 data traitées pour ${host}:${port}`);
-    try {
-      const msg = JSON.parse(data.toString());
-      handleMessage(msg);
-    } catch (err) {
-      log("Erreur JSON:", err);
+    while (buffer.length >= 4) {
+      const msgLength = buffer.readUInt32BE(0);
+
+      if (buffer.length < 4 + msgLength) break;
+
+      const body = buffer.slice(4, 4 + msgLength);
+      buffer = buffer.slice(4 + msgLength);
+      try {
+        const msg = JSON.parse(body.toString());
+        handleMessage(msg);
+      } catch (err) {
+        log("Erreur JSON:", err);
+      }
+      client.end();
     }
-    client.end();
   });
 
   client.on("error", (err) => {
@@ -783,7 +818,7 @@ function txAlreadyInChain(txid) {
 ════════════════════════════════════════
 Toute la logique réseau est centralisée ici
 */
-///////////////////////////////////////////////////////////////////////////socket.write(JSON.stringify(...), () => socket.end());
+
 function handleMessage(msg, socket = null) {
   if (!msg || !msg.type) return;
 
@@ -793,14 +828,13 @@ function handleMessage(msg, socket = null) {
       case "GET_CHAIN":
         if (!blockchain.length) return;
 
-        socket?.write(
-          JSON.stringify({
-            type: "FULL_CHAIN",
-            from: nodeID,
-            chain: blockchain,
-          }),
-        );
-        socket.end(); // ✅ IMPORTANT: on ferme la connexion après envoi
+        sendFramed(socket, {
+          type: "FULL_CHAIN",
+          from: nodeID,
+          chain: blockchain,
+        });
+
+        // socket.end(); // ✅ IMPORTANT: on ferme la connexion après envoi
         break;
 
       // Demande partielle : "Donne-moi les blocs après un index"
@@ -813,15 +847,12 @@ function handleMessage(msg, socket = null) {
 
         const missingBlocks = blockchain.slice(startIndex);
 
-        socket.write(
-          JSON.stringify({
-            type: "BLOCKS",
-            from: nodeID,
-            blocks: missingBlocks,
-          }),
-        );
-
-        socket.end();
+        sendFramed(socket, {
+          type: "BLOCKS",
+          from: nodeID,
+          blocks: missingBlocks,
+        });
+        //socket.end();
         break;
       }
       // Réception d’une liste de blocs manquants
@@ -870,7 +901,7 @@ function handleMessage(msg, socket = null) {
         }
 
         log(">> 🟢 Sync incrémental terminé");
-        socket.end();
+        //socket.end();
         break;
       }
       // Réception d’une blockchain complète
@@ -902,7 +933,7 @@ function handleMessage(msg, socket = null) {
 
         isSyncing = false;
         log(`>> 🟢 Synchronisation terminée et soldes mis à jour`);
-        socket.end();
+        //socket.end();
         break;
       // Réception d’un nouveau bloc
       case "NEW_BLOCK": {
@@ -982,7 +1013,7 @@ Donc on doit les retirer du mempool local.
         // for (const tx of block.data.transactions) { applyTransaction(tx, balances);}
 
         log(`>> ➕ Bloc ajouté`);
-        socket.end();
+        // socket.end();
         break;
       }
       // Réception d’une nouvelle transaction
@@ -1031,7 +1062,7 @@ Donc on doit les retirer du mempool local.
             tx,
           }),
         );
-        socket.end();
+        //socket.end();
 
         break;
       }
@@ -1051,16 +1082,16 @@ Donc on doit les retirer du mempool local.
           timestamp: Date.now(),
         });
         log("📩 Nouveau mail reçu !");
-        socket.end();
+        // socket.end();
         return;
       }
     }
   } catch (err) {
     log("Erreur handleMessage:", err);
-    socket.end();
+    socket.end();///////////////////////////////////////////////////////////////
   } finally {
     if (socket && !socket.destroyed) {
-      socket.end();
+      socket.end();///////////////////////////////////////////////////////////////
     }
   }
 }
@@ -1079,17 +1110,42 @@ const server = net.createServer((socket) => {
   log(`🔌 Nouvelle connexion`);
   log(`📌 Total connexions depuis démarrage: ${connectionCount}`);
   log(`🟢 Connexions actives: ${sockets.size}`);
-  ///////////////////////////////// Il faudra plus tard installer un Buffer pour la version Node: let buffer = "";
+  /////////////////////////////////
   // 📩 Réception de données
-  socket.on("data", (data) => {
-    log("📩 RAW data reçue");
-    try {
-      const msg = JSON.parse(data.toString());
-      handleMessage(msg, socket);
-    } catch (err) {
-      log("❌ JSON invalide reçu");
+  // ==========================================
+  // ✅ Réception robuste (buffer + while)
+  // ==========================================
+
+  let buffer = Buffer.alloc(0);
+
+  socket.on("data", (chunk) => {
+    // TCP = flux → on accumule
+    buffer = Buffer.concat([buffer, chunk]);
+
+    // Tant qu'on peut extraire un message complet
+    while (buffer.length >= 4) {
+      // Lire longueur
+      const msgLength = buffer.readUInt32BE(0);
+
+      // Message incomplet → attendre chunk suivant
+      if (buffer.length < 4 + msgLength) break;
+
+      // Extraire payload JSON
+      const body = buffer.slice(4, 4 + msgLength);
+
+      // Retirer du buffer
+      buffer = buffer.slice(4 + msgLength);
+
+      // Parser le message complet
+      try {
+        const msg = JSON.parse(body.toString());
+        handleMessage(msg, socket);
+      } catch (err) {
+        log("❌ Message JSON corrompu reçu");
+      }
     }
   });
+
   // 🔒 Gestion de la fermeture de connexion
   socket.on("close", () => {
     sockets.delete(socket);
@@ -1400,7 +1456,7 @@ function notifyPeer(peer, message) {
   client.setTimeout(300);
 
   client.on("connect", () => {
-    client.write(JSON.stringify(message));
+    sendFramed(client, message);
     client.end(); // 👋 terminé direct
   });
 
