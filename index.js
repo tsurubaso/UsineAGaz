@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 dotenv.config();
 import crypto from "crypto";
 import net from "net";
+import tls from "tls";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
 import express from "express";
@@ -42,6 +43,33 @@ function log(message) {
   // limite à 30 lignes
   if (logs.length > 30) logs.shift();
 }
+/*
+════════════════════════════════════════
+ CONFIGURATION DU system de cryptage des communicatons
+════════════════════════════════════════
+Tls or not tls, that is the question.
+tout est dans le dossier certs ignore par defaut par git.
+Le nom du node doit toujours etre le meme malgré le fait que ce soit node2, node3...
+Donc on a node.crt et node.key pour tous les nodes, mais avec des clés différentes à l’intérieur.
+*/
+
+const USE_TLS = process.env.USE_TLS === "true";
+
+function getTLSOptions() {
+  if (!USE_TLS) return null;
+
+  return {
+    cert: fs.readFileSync("./certs/node.crt"),
+    key: fs.readFileSync("./certs/node.key"),
+    ca: fs.readFileSync("./certs/ca.crt"),
+
+    requestCert: true,
+    rejectUnauthorized: true,
+  };
+}
+
+
+
 
 /*
 ════════════════════════════════════════
@@ -1098,7 +1126,7 @@ Donc on doit les retirer du mempool local.
 
 /*
 ════════════════════════════════════════
-      SERVEUR TCP
+      SERVEUR TCP ou TLS
 ════════════════════════════════════════
 */
 let connectionCount = 0;
