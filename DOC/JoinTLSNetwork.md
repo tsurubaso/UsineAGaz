@@ -149,5 +149,3 @@ TLS will ensure:
 * Production-ready secure handshake
 
 ---
-
-If you want, next step is **integrating this into the Node.js TCP code** with `tls.createServer()` and `tls.connect()` 🔥
