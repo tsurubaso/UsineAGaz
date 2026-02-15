@@ -22,3 +22,5 @@ yarn-error.log*
 eraseme.js
 eraseme.html
 eraseme.md
+
+certs/
