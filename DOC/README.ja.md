@@ -65,6 +65,15 @@ https://github.com/tsurubaso/TCPmogi
 このミニリポジトリでは、TCP通信でJSONが途中で壊れる理由と、安全にメッセージを復元する方法を解説しています。
 
 ---
+## 🔐 Secure Network (TLS)
+
+Bouya-Bouya nodes communicate over **encrypted TLS channels**, using a small Certificate Authority (mini-PKI).
+
+If you want to add a new node (Node2, Node3, …) to the network, follow the step-by-step guide here:
+
+➡️ **[Join the Bouya-Bouya TLS Network](JoinTLSNetwork.md)**
+
+---
 
 # 🛠 インストール & 設定
 

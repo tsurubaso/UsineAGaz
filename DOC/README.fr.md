@@ -58,6 +58,14 @@ https://github.com/tsurubaso/TCPmogi
 
 Cette mini-repo explique pourquoi JSON casse en TCP et comment reconstruire des messages correctement.
 
+---
+## 🔐 Secure Network (TLS)
+
+Bouya-Bouya nodes communicate over **encrypted TLS channels**, using a small Certificate Authority (mini-PKI).
+
+If you want to add a new node (Node2, Node3, …) to the network, follow the step-by-step guide here:
+
+➡️ **[Join the Bouya-Bouya TLS Network](JoinTLSNetwork.md)**
 
 ---
 
