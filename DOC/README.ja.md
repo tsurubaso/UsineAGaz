@@ -1,5 +1,9 @@
 🌍 言語: [English](../README.MD) | [Français](README.fr.md) | [日本語](README.ja.md)
 
+以下を読む前に以下のリンクを確認ください。
+初心者向けです！
+[Join the Buya-Bouya Network!(日本語版)]（JoinTheNetwork.md）
+
 # 🪙 Bouya-Bouya Blockchain 🚀
 
 ### 分散型P2Pネットワーク（Node.js）
