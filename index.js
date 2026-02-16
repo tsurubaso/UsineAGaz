@@ -63,13 +63,10 @@ function getTLSOptions() {
     key: fs.readFileSync("./certs/node.key"),
     ca: fs.readFileSync("./certs/ca.crt"),
 
-    requestCert: true,////////////////////////////////////////////////// pas demande dans dernier example
+    requestCert: true, ////////////////////////////////////////////////// pas demande dans dernier example
     rejectUnauthorized: true,
   };
 }
-
-
-
 
 /*
 ════════════════════════════════════════
@@ -758,7 +755,7 @@ function recalculateBalances() {
     `>> 💰 Soldes recalculés : ${Object.keys(balances).length} comptes trouvés.`,
   );
 }
-  
+
 /*
 ════════════════════════════════════════
       CLIENT TCP
@@ -806,12 +803,12 @@ function sendMessage(target, message) {
     port = parseInt(port);
   }
 
-    // ============================
+  // ============================
   // TCP ou TLS selon USE_TLS
   // ============================
+  const tlsOptions = getTLSOptions();
 
-
-    const client = USE_TLS
+  const client = USE_TLS
     ? tls.connect({ host, port, ...tlsOptions }, () => {
         log(`🔐 TLS connecté → ${host}:${port}`);
         sendFramed(client, message);
@@ -823,14 +820,14 @@ function sendMessage(target, message) {
 
   // ============================
   // Réception bufferisée
-  // ============================    
-      
+  // ============================
+
   let buffer = Buffer.alloc(0);
   client.on("data", (chunk) => {
     buffer = Buffer.concat([buffer, chunk]);
 
     log(`>> 📤 data traitées pour ${host}:${port}`);
-   
+
     while (buffer.length >= 4) {
       const msgLength = buffer.readUInt32BE(0);
 
@@ -838,14 +835,14 @@ function sendMessage(target, message) {
 
       const body = buffer.slice(4, 4 + msgLength);
       buffer = buffer.slice(4 + msgLength);
-     
+
       try {
         const msg = JSON.parse(body.toString());
         handleMessage(msg);
       } catch (err) {
         log("Erreur JSON:", err);
       }
-      client.end();///A supprimer dans le futur pour permettre les échanges plus longs et persistants, mais pour l'instant on ferme la connexion après réception du message, comme dans l'exemple précédent
+      client.end(); ///A supprimer dans le futur pour permettre les échanges plus longs et persistants, mais pour l'instant on ferme la connexion après réception du message, comme dans l'exemple précédent
     }
   });
 
@@ -1136,10 +1133,10 @@ Donc on doit les retirer du mempool local.
     }
   } catch (err) {
     log("Erreur handleMessage:", err);
-    socket.end();///////////////////////////////////////////////////////////////
+    socket.end(); ///////////////////////////////////////////////////////////////
   } finally {
     if (socket && !socket.destroyed) {
-      socket.end();///////////////////////////////////////////////////////////////
+      socket.end(); ///////////////////////////////////////////////////////////////
     }
   }
 }
@@ -1210,11 +1207,10 @@ function onConnection(socket) {
   socket.on("error", (err) => {
     log(`>> ❌ Erreur de connexion (Socket) : ${err.message}`);
   });
-};
+}
 //);
 
-function startP2PServer() {
-  const tlsOptions = getTLSOptions();
+function startP2PServer(tlsOptions) {
 
   const server = USE_TLS
     ? tls.createServer(tlsOptions, onConnection)
