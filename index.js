@@ -63,7 +63,7 @@ function getTLSOptions() {
     key: fs.readFileSync("./certs/node.key"),
     ca: fs.readFileSync("./certs/ca.crt"),
 
-    requestCert: true,
+    requestCert: true,////////////////////////////////////////////////// pas demande dans dernier example
     rejectUnauthorized: true,
   };
 }
@@ -796,6 +796,7 @@ function sendFramed(socket, obj) {
 function sendMessage(target, message) {
   let host = target;
   let port = P2P_PORT;
+
   log("Sending message to " + target);
   log("Using port " + port);
 
@@ -805,13 +806,31 @@ function sendMessage(target, message) {
     port = parseInt(port);
   }
 
-  const client = net.createConnection({ host, port }, () => {
-    sendFramed(client, message);
-  });
+    // ============================
+  // TCP ou TLS selon USE_TLS
+  // ============================
+
+
+    const client = USE_TLS
+    ? tls.connect({ host, port, ...tlsOptions }, () => {
+        log(`🔐 TLS connecté → ${host}:${port}`);
+        sendFramed(client, message);
+      })
+    : net.createConnection({ host, port }, () => {
+        log(`🔌 TCP connecté → ${host}:${port}`);
+        sendFramed(client, message);
+      });
+
+  // ============================
+  // Réception bufferisée
+  // ============================    
+      
   let buffer = Buffer.alloc(0);
   client.on("data", (chunk) => {
     buffer = Buffer.concat([buffer, chunk]);
+
     log(`>> 📤 data traitées pour ${host}:${port}`);
+   
     while (buffer.length >= 4) {
       const msgLength = buffer.readUInt32BE(0);
 
@@ -819,13 +838,14 @@ function sendMessage(target, message) {
 
       const body = buffer.slice(4, 4 + msgLength);
       buffer = buffer.slice(4 + msgLength);
+     
       try {
         const msg = JSON.parse(body.toString());
         handleMessage(msg);
       } catch (err) {
         log("Erreur JSON:", err);
       }
-      client.end();
+      client.end();///A supprimer dans le futur pour permettre les échanges plus longs et persistants, mais pour l'instant on ferme la connexion après réception du message, comme dans l'exemple précédent
     }
   });
 
@@ -1131,7 +1151,8 @@ Donc on doit les retirer du mempool local.
 */
 let connectionCount = 0;
 const sockets = new Set();
-const server = net.createServer((socket) => {
+//const server = net.createServer((socket) => {
+function onConnection(socket) {
   connectionCount++;
   sockets.add(socket);
 
@@ -1189,13 +1210,26 @@ const server = net.createServer((socket) => {
   socket.on("error", (err) => {
     log(`>> ❌ Erreur de connexion (Socket) : ${err.message}`);
   });
-});
+};
+//);
+
+function startP2PServer() {
+  const tlsOptions = getTLSOptions();
+
+  const server = USE_TLS
+    ? tls.createServer(tlsOptions, onConnection)
+    : net.createServer(onConnection);
+
+  return server;
+}
 
 /*
 ════════════════════════════════════════
       DÉMARRAGE & SYNCHRO INITIALE
 ════════════════════════════════════════
 */
+
+const server = startP2PServer();
 
 switch (NETWORK_MODE) {
   // En mode IP, on écoute sur toutes les interfaces réseau
