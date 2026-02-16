@@ -63,8 +63,8 @@ function getTLSOptions() {
     key: fs.readFileSync("./certs/node.key"),
     ca: fs.readFileSync("./certs/ca.crt"),
 
-    requestCert: true, ////////////////////////////////////////////////// pas demande dans dernier example
-    rejectUnauthorized: true,
+    requestCert: false,
+    rejectUnauthorized: false,
   };
 }
 
@@ -1211,7 +1211,6 @@ function onConnection(socket) {
 //);
 
 function startP2PServer(tlsOptions) {
-
   const server = USE_TLS
     ? tls.createServer(tlsOptions, onConnection)
     : net.createServer(onConnection);
@@ -1919,6 +1918,11 @@ switch (NETWORK_MODE) {
     webServer = app.listen(WEB_PORT, "0.0.0.0", () => {
       log(`>> 🌍 Dashboard Web (IP) sur http://<TON_IP>:${WEB_PORT}`);
     });
+    ///////////////////////////////////////////////////////////////////////////////////////POUR TESTER
+    server.on("secureConnection", (socket) => {
+      console.log("Peer cert:", socket.getPeerCertificate());
+    });
+
     break;
 
   default:
