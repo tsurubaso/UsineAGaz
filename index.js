@@ -1246,7 +1246,7 @@ function startP2PServer() {
 */
 
 const server = startP2PServer();
-/*
+
 switch (NETWORK_MODE) {
   // En mode IP, on écoute sur toutes les interfaces réseau
   // pour permettre aux autres PC du LAN de se connecter
@@ -1272,7 +1272,7 @@ switch (NETWORK_MODE) {
     });
 }
 
-
+/*
 ════════════════════════════════════════  
 9. DASHBOARD WEB (EXPRESS)
 ════════════════════════════════════════
