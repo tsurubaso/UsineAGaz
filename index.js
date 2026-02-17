@@ -59,8 +59,8 @@ function getTLSOptions() {
   if (!USE_TLS) return null;
 
   return {
-    cert: fs.readFileSync("./certs/node.crt"),
-    key: fs.readFileSync("./certs/node.key"),
+    cert: fs.readFileSync(`./certs/${nodeID}.crt`),
+    key: fs.readFileSync(`./certs/${nodeID}.key`),
     ca: fs.readFileSync("./certs/ca.crt"),
 
     requestCert: false,
