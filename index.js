@@ -815,7 +815,7 @@ function sendMessage(target, message) {
         ca: fs.readFileSync("certs/ca.crt"),
         cert: fs.readFileSync(`certs/${nodeID}.crt`),
         key: fs.readFileSync(`certs/${nodeID}.key`),
-        servername: "node1", // IMPORTANT
+        servername: host,  // IMPORTANT
         rejectUnauthorized: true,
       })
     : net.createConnection({ host, port }, () => {
