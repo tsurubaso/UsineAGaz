@@ -63,8 +63,8 @@ function getTLSOptions() {
     key: fs.readFileSync(`./certs/${nodeID}.key`),
     ca: fs.readFileSync("./certs/ca.crt"),
 
-    requestCert: false,
-    rejectUnauthorized: false,
+    requestCert: true,
+    rejectUnauthorized: true,
   };
 }
 
