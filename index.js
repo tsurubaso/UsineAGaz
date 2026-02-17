@@ -794,35 +794,43 @@ function sendMessage(target, message) {
   let host = target;
   let port = P2P_PORT;
 
-  log("Sending message to " + target);
-  log("Using port " + port);
-
   // Mode IP : "192.168.0.112:5000"
   if (target.includes(":")) {
     [host, port] = target.split(":");
     port = parseInt(port);
   }
 
+  log("Sending message to " + target);
+  log("Using port " + port);
+
   // ============================
   // TCP ou TLS selon USE_TLS
   // ============================
-  const tlsOptions = getTLSOptions();
+  //const tlsOptions = getTLSOptions();
 
   const client = USE_TLS
-    ? tls.connect({
-        host,
-        port,
-        ca: fs.readFileSync("certs/ca.crt"),
-        cert: fs.readFileSync(`certs/${nodeID}.crt`),
-        key: fs.readFileSync(`certs/${nodeID}.key`),
-        servername: `${nodeID}`, // IMPORTANT
-        rejectUnauthorized: true,
-      })
+    ? tls.connect(
+        {
+          host,
+          port,
+          ca: fs.readFileSync("certs/ca.crt"),
+          cert: fs.readFileSync(`certs/${nodeID}.crt`),
+          key: fs.readFileSync(`certs/${nodeID}.key`),
+          rejectUnauthorized: true,
+        },
+        () => {
+          log(`🔐 TLS connecté → ${host}:${port}`);
+          sendFramed(client, message);
+        },
+      )
     : net.createConnection({ host, port }, () => {
         log(`🔌 TCP connecté → ${host}:${port}`);
         sendFramed(client, message);
       });
 
+  client.on("error", (err) => {
+    log(`❌ Connection error → ${host}:${port}: ${err.message}`);
+  });
   // ============================
   // Réception bufferisée
   // ============================
