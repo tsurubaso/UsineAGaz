@@ -809,9 +809,14 @@ function sendMessage(target, message) {
   const tlsOptions = getTLSOptions();
 
   const client = USE_TLS
-    ? tls.connect({ host, port, ...tlsOptions }, () => {
-        log(`🔐 TLS connecté → ${host}:${port}`);
-        sendFramed(client, message);
+    ? tls.connect({
+        host,
+        port,
+        ca: fs.readFileSync("certs/ca.crt"),
+        cert: fs.readFileSync(`certs/${nodeID}.crt`),
+        key: fs.readFileSync(`certs/${nodeID}.key`),
+        servername: "node1", // IMPORTANT
+        rejectUnauthorized: true,
       })
     : net.createConnection({ host, port }, () => {
         log(`🔌 TCP connecté → ${host}:${port}`);
@@ -1203,6 +1208,11 @@ function onConnection(socket) {
     log("📴 Connexion terminée (end)");
   });
 
+  socket.on("close", () => {
+    sockets.delete(socket);
+    log("❌ Connexion fermée");
+  });
+
   // ⚠️ Erreur réseau
   socket.on("error", (err) => {
     log(`>> ❌ Erreur de connexion (Socket) : ${err.message}`);
@@ -1210,10 +1220,21 @@ function onConnection(socket) {
 }
 //);
 
-function startP2PServer(tlsOptions) {
+function startP2PServer() {
+  const tlsOptions = getTLSOptions();
+
   const server = USE_TLS
     ? tls.createServer(tlsOptions, onConnection)
     : net.createServer(onConnection);
+  if (USE_TLS) {
+    log(">> 🔐 Serveur TLS configuré");
+  } else {
+    log(">> 🔌 Serveur TCP configuré");
+  }
+  //////////////////////////////////////////////////////////////////
+  server.listen(P2P_PORT, "0.0.0.0", () => {
+    log(`✅ Node listening on ${P2P_PORT} (${USE_TLS ? "TLS" : "TCP"})`);
+  });
 
   return server;
 }
@@ -1225,7 +1246,7 @@ function startP2PServer(tlsOptions) {
 */
 
 const server = startP2PServer();
-
+/*
 switch (NETWORK_MODE) {
   // En mode IP, on écoute sur toutes les interfaces réseau
   // pour permettre aux autres PC du LAN de se connecter
@@ -1251,7 +1272,7 @@ switch (NETWORK_MODE) {
     });
 }
 
-/*
+
 ════════════════════════════════════════  
 9. DASHBOARD WEB (EXPRESS)
 ════════════════════════════════════════
