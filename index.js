@@ -1948,9 +1948,7 @@ switch (NETWORK_MODE) {
       log(`>> 🌍 Dashboard Web (IP) sur http://<TON_IP>:${WEB_PORT}`);
     });
     ///////////////////////////////////////////////////////////////////////////////////////POUR TESTER
-    server.on("secureConnection", (socket) => {
-      console.log("Peer cert:", socket.getPeerCertificate());
-    });
+   // server.on("secureConnection", (socket) => { console.log("Peer cert:", socket.getPeerCertificate());});
 
     break;
 
