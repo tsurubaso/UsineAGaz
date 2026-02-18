@@ -23,7 +23,7 @@ let shuttingDown = false;
 
 const MASTER_ID = process.env.MASTER_ID || "node1";
 const WEB_PORT = parseInt(process.env.WEB_PORT || "3000");
-const P2P_PORT = parseInt(process.env.P2P_PORT || "5000");
+const P2P_PORT = parseInt(process.env.P2P_PORT || "5000");  
 
 const NETWORK_MODE = process.env.NETWORK_MODE || "docker";
 
