@@ -855,7 +855,7 @@ function sendMessage(target, message) {
       } catch (err) {
         log("Erreur JSON:", err);
       }
-      client.end(); ///A supprimer dans le futur pour permettre les échanges plus longs et persistants, mais pour l'instant on ferme la connexion après réception du message, comme dans l'exemple précédent
+      //client.end(); ///A supprimer dans le futur pour permettre les échanges plus longs et persistants, mais pour l'instant on ferme la connexion après réception du message, comme dans l'exemple précédent
     }
   });
 
@@ -1147,9 +1147,11 @@ Donc on doit les retirer du mempool local.
   } catch (err) {
     log("Erreur handleMessage:", err);
     socket.end(); ///////////////////////////////////////////////////////////////
+    
   } finally {
     if (socket && !socket.destroyed) {
-      socket.end(); ///////////////////////////////////////////////////////////////
+      //socket.end(); ///////////////////////////////////////////////////////////////
+      log("La socket est maintenue, pas de fermeture.")
     }
   }
 }
@@ -1240,6 +1242,7 @@ function startP2PServer() {
     log(">> 🔌 Serveur TCP configuré");
   }
   //////////////////////////////////////////////////////////////////
+
   return server;
 }
 
@@ -1537,7 +1540,7 @@ function notifyPeer(peer, message) {
 
   client.on("connect", () => {
     sendFramed(client, message);
-    client.end(); // 👋 terminé direct
+   // client.end(); // 👋 terminé direct
   });
 
   client.on("timeout", () => {
