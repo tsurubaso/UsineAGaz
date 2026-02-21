@@ -11,6 +11,7 @@ let logs = [];
 // Pour indiquer que le nœud est en train de s’arrêter
 let shuttingDown = false;
 
+
 /*
 ════════════════════════════════════════
         General concept      
@@ -1161,15 +1162,14 @@ Donc on doit les retirer du mempool local.
       SERVEUR TCP ou TLS
 ════════════════════════════════════════
 */
-let connectionCount = 0;
+
 const sockets = new Set();
 //const server = net.createServer((socket) => {
 function onConnection(socket) {
-  connectionCount++;
+  
   sockets.add(socket);
 
   log(`🔌 Nouvelle connexion`);
-  log(`📌 Total connexions depuis démarrage: ${connectionCount}`);
   log(`🟢 Connexions actives: ${sockets.size}`);
   /////////////////////////////////
   // 📩 Réception de données
@@ -1747,7 +1747,6 @@ app.get("/", (req, res) => {
       </div>
       <div class="box">
          <p><b>Connexions actives :</b> ${sockets.size}</p>
-         <p><b>Connexions totales depuis démarrage :</b> ${connectionCount}</p>
       </div>
       <div class="box">
          <ul>
