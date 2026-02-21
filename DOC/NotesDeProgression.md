@@ -1,28 +1,8 @@
 
 
-D’abord, pourquoi garder Internet en tête dès maintenant ?
-
-Parce que certaines décisions sont faciles à changer plus tard…
-et d’autres deviennent très coûteuses.
-
-Par exemple :
-
-* Le format des messages réseau
-* Le modèle d’authentification
-* La gestion des peers
-* Les limites de ressources
-
-Si ces fondations sont propres en LAN, elles survivront à Internet.
-
----
-
-Maintenant, quelle est la bonne stratégie ?
-
-On peut résumer en une phrase :
-
 Construire un réseau LAN comme s’il était hostile.
 
-Même si tout est “gentil” sur ton réseau local, tu dois :
+ tu dois :
 
 * valider tous les messages
 * limiter la taille des payloads
@@ -30,13 +10,10 @@ Même si tout est “gentil” sur ton réseau local, tu dois :
 * éviter les boucles infinies
 * éviter les reconnexions agressives
 
-Si ton LAN est robuste comme ça, il sera presque prêt pour Internet.
 
----
-
-Voici la progression logique saine.
 
 Étape 1 — Connexions persistantes propres
+
 
 Avant Internet, tu dois :
 
@@ -44,9 +21,281 @@ Avant Internet, tu dois :
 * maintenir une table de peers actifs
 * gérer proprement les déconnexions
 
-En LAN, tu peux tester ça facilement.
+---
 
-C’est fondamental.
+# 🎯 But de l’étape 1
+
+Aujourd’hui :
+
+connect → send → receive → close
+
+On veut :
+
+connect → garder la connexion → échanger plusieurs messages → détecter déconnexion → reconnecter si besoin
+
+Ça change complètement la nature du réseau.
+
+---
+
+# 🧠 Concept clé : Peer Manager
+
+On va introduire une structure centrale :
+
+```
+peers = new Map()
+```
+
+Chaque peer aura :
+
+* id
+* host
+* port
+* socket
+* status
+
+Ce n’est plus juste une IP.
+C’est une entité réseau vivante.
+
+---
+
+# 🧱 Étape 1.1 — Stocker les connexions entrantes
+
+Quand ton serveur reçoit une connexion TLS :
+
+Actuellement tu fais sûrement :
+
+```js
+server.on("secureConnection", (socket) => {
+   ...
+});
+```
+
+On va maintenant enregistrer le peer.
+
+Exemple :
+
+```js
+const peers = new Map();
+
+server.on("secureConnection", (socket) => {
+  const peerId = socket.getPeerCertificate().subject.CN;
+
+  console.log("🔐 Connexion entrante de", peerId);
+
+  peers.set(peerId, {
+    socket,
+    lastSeen: Date.now()
+  });
+
+  socket.on("close", () => {
+    console.log("❌ Déconnecté :", peerId);
+    peers.delete(peerId);
+  });
+
+  socket.on("error", (err) => {
+    console.log("⚠️ Erreur peer", peerId, err.message);
+  });
+});
+```
+
+Maintenant tu gardes les connexions.
+
+---
+
+# 🧱 Étape 1.2 — Connexions sortantes persistantes
+
+Aujourd’hui `sendMessage()` ouvre une connexion à chaque fois.
+
+On va séparer :
+
+* connectToPeer(peer)
+* sendToPeer(peerId, message)
+
+---
+
+### Nouvelle fonction : connectToPeer
+
+```js
+function connectToPeer(peerId, host, port) {
+  if (peers.has(peerId)) {
+    return;
+  }
+
+  const socket = tls.connect({
+    host,
+    port,
+    ca: fs.readFileSync("certs/ca.crt"),
+    cert: fs.readFileSync(`certs/${nodeID}.crt`),
+    key: fs.readFileSync(`certs/${nodeID}.key`),
+    rejectUnauthorized: true,
+    servername: peerId
+  }, () => {
+    console.log("🔗 Connecté à", peerId);
+
+    peers.set(peerId, {
+      socket,
+      host,
+      port,
+      lastSeen: Date.now()
+    });
+  });
+
+  socket.on("close", () => {
+    console.log("❌ Perte connexion", peerId);
+    peers.delete(peerId);
+  });
+
+  socket.on("error", (err) => {
+    console.log("⚠️ Erreur sortante", peerId, err.message);
+  });
+
+  attachFraming(socket);
+}
+```
+
+---
+
+# 🧱 Étape 1.3 — Séparer le framing
+
+Très important : ne pas dupliquer le code de réception.
+
+Créer une fonction :
+
+```js
+function attachFraming(socket) {
+  let buffer = Buffer.alloc(0);
+
+  socket.on("data", (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+
+    while (buffer.length >= 4) {
+      const msgLength = buffer.readUInt32BE(0);
+      if (buffer.length < 4 + msgLength) break;
+
+      const body = buffer.slice(4, 4 + msgLength);
+      buffer = buffer.slice(4 + msgLength);
+
+      try {
+        const msg = JSON.parse(body.toString());
+        handleMessage(msg, socket);
+      } catch (err) {
+        console.log("Erreur JSON:", err);
+      }
+    }
+  });
+}
+```
+
+Maintenant framing = centralisé.
+
+---
+
+# 🧱 Étape 1.4 — Broadcast
+
+Maintenant que les connexions sont persistantes :
+
+```js
+function broadcast(message, excludeSocket = null) {
+  for (const [peerId, peer] of peers) {
+    if (peer.socket !== excludeSocket) {
+      sendFramed(peer.socket, message);
+    }
+  }
+}
+```
+
+Et là…
+
+Ton réseau devient vivant.
+
+---
+
+# 🧠 Important : Éviter la double connexion
+
+Problème classique :
+
+Node A se connecte à B
+B se connecte à A
+
+Résultat : 2 connexions.
+
+Solution simple :
+
+Règle déterministe :
+
+* Seul le node avec l’ID lexicalement plus petit initie la connexion.
+
+Exemple :
+
+```
+if (myId < peerId) connectToPeer()
+```
+
+Ça évite le doublon.
+
+---
+
+# 🧪 Étape 1.5 — Test de stabilité
+
+Avant d’aller plus loin, teste :
+
+* 3 nodes
+* Connexions simultanées
+* Déconnexion d’un node
+* Redémarrage
+
+Tu dois voir :
+
+* peers map se mettre à jour
+* pas de crash
+* pas de boucle infinie
+
+---
+
+# 📡 Résultat final de cette étape
+
+Après ça :
+
+✔ Connexions TLS persistantes
+✔ Table de peers active
+✔ Broadcast instantané
+✔ Détection des déconnexions
+
+À ce stade, tu as un vrai réseau P2P minimal.
+
+---
+
+# 🌍 Pourquoi c’est fondamental avant Internet ?
+
+Parce que sur Internet :
+
+* Les nodes tombent
+* Les connexions se coupent
+* Les erreurs sont fréquentes
+
+Si ton LAN survit aux déconnexions propres,
+il survivra beaucoup mieux au monde réel.
+
+---
+
+Si tu veux, prochaine étape après ça :
+
+Peer discovery automatique.
+
+Mais d’abord :
+Implémente la Map des peers et le broadcast.
+
+Et quand c’est stable… on passe au niveau suivant 🙂
+
+
+
+
+
+
+
+
+
+
 
 ---
 
