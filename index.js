@@ -1240,10 +1240,6 @@ function startP2PServer() {
     log(">> 🔌 Serveur TCP configuré");
   }
   //////////////////////////////////////////////////////////////////
-  server.listen(P2P_PORT, "0.0.0.0", () => {
-    log(`✅ Node listening on ${P2P_PORT} (${USE_TLS ? "TLS" : "TCP"})`);
-  });
-
   return server;
 }
 
@@ -1585,7 +1581,7 @@ function gracefulShutdown() {
 
   // 4. Fermer serveur TCP
   server.close(() => {
-    log("✅ Serveur TCP fermé");
+    log("✅ Serveur TCP ou TLS fermé");
 
     // 5. Fermer serveur web
     webServer.close(() => {
