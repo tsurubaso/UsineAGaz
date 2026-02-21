@@ -95,19 +95,20 @@ log(`>> WEB_PORT = ${WEB_PORT}`);
 
 const peersConfig = JSON.parse(fs.readFileSync("./peers.json", "utf-8"));
 
-let peers = [];
+let peersConfigList= [];
+const activePeers = new Map();
 
 // On enlève notre propre adresse IP:PORT pour éviter de se connecter à soi-même et provoquer un feu d'artifice.
 
 if (NETWORK_MODE === "docker") {
-  peers = peersConfig.peersDocker.filter((id) => id !== nodeID);
+  peersConfigList= peersConfig.peersDocker.filter((id) => id !== nodeID);
 }
 
 if (NETWORK_MODE === "ip") {
-  peers = peersConfig.peersIP.filter((addr) => !addr.endsWith(":" + P2P_PORT));
+  peersConfigList= peersConfig.peersIP.filter((addr) => !addr.endsWith(":" + P2P_PORT));
 }
 
-log(`>> Peers chargés (${NETWORK_MODE}) : ${JSON.stringify(peers)}`);
+log(`>> Peers chargés (${NETWORK_MODE}) : ${JSON.stringify(peersConfigList)}`);
 
 /*
 ════════════════════════════════════════
@@ -1147,7 +1148,7 @@ Donc on doit les retirer du mempool local.
     }
   } catch (err) {
     log("Erreur handleMessage:", err);
-    socket.end(); ///////////////////////////////////////////////////////////////
+    socket.destroy(); ///////////////////////////////////////////////////////////////
     
   } finally {
     if (socket && !socket.destroyed) {
@@ -1166,7 +1167,29 @@ Donc on doit les retirer du mempool local.
 const sockets = new Set();
 //const server = net.createServer((socket) => {
 function onConnection(socket) {
-  
+  if (USE_TLS) {
+  const cert = socket.getPeerCertificate();
+
+  if (!cert?.subject?.CN) {
+    console.log("❌ Certificat invalide");
+    socket.destroy();
+    return;
+  }
+
+  const peerId = cert.subject.CN;
+
+  console.log("🔐 Connexion entrante de", peerId);
+
+  peers.set(peerId, {
+    socket,
+    lastSeen: Date.now()
+  });
+
+  socket.on("close", () => {
+    console.log("❌ Déconnecté :", peerId);
+    peers.delete(peerId);
+  });
+}
   sockets.add(socket);
 
   log(`🔌 Nouvelle connexion`);
