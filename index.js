@@ -11,7 +11,6 @@ let logs = [];
 // Pour indiquer que le nœud est en train de s’arrêter
 let shuttingDown = false;
 
-
 /*
 ════════════════════════════════════════
         General concept      
@@ -24,26 +23,10 @@ let shuttingDown = false;
 
 const MASTER_ID = process.env.MASTER_ID || "node1";
 const WEB_PORT = parseInt(process.env.WEB_PORT || "3000");
-const P2P_PORT = parseInt(process.env.P2P_PORT || "5000");  
+const P2P_PORT = parseInt(process.env.P2P_PORT || "5000");
 
 const NETWORK_MODE = process.env.NETWORK_MODE || "docker";
 
-/*
-════════════════════════════════════════
-Un des points les plus importants seront les logs.
-On va beaucoup loger. 
-════════════════════════════════════════
-*/
-
-function log(message) {
-  const line = `[${nodeID}] ${message}`;
-  console.log(line);
-
-  logs.push(line);
-
-  // limite à 30 lignes
-  if (logs.length > 30) logs.shift();
-}
 /*
 ════════════════════════════════════════
  CONFIGURATION DU system de cryptage des communicatons
@@ -89,6 +72,23 @@ log(`>> WEB_PORT = ${WEB_PORT}`);
 
 /*
 ════════════════════════════════════════
+Un des points les plus importants seront les logs.
+On va beaucoup loger. 
+════════════════════════════════════════
+*/
+
+function log(message) {
+  const line = `[${nodeID}] ${message}`;
+  console.log(line);
+
+  logs.push(line);
+
+  // limite à 30 lignes
+  if (logs.length > 30) logs.shift();
+}
+
+/*
+════════════════════════════════════════
  PEERS CONFIG (JSON)
 ════════════════════════════════════════
 */
@@ -104,16 +104,18 @@ if (NETWORK_MODE === "docker") {
 
 if (NETWORK_MODE === "ip") {
   peersConfigList = peersConfig.peersIP.filter(
-    (addr) => !addr.endsWith(":" + P2P_PORT)
+    (addr) => !addr.endsWith(":" + P2P_PORT),
   );
 }
 
 // Peers actifs (connexions ouvertes)
-const peers = new Map(); 
+const peers = new Map();
 // key = peerId ou host:port
 // value = { socket, host, port, lastSeen }
 
-log(`>> Peers chargés (${NETWORK_MODE}) : ${JSON.stringify(peers)}`);
+log(
+  `>> Peers configurés (${NETWORK_MODE}) : ${JSON.stringify(peersConfigList)}`,
+);
 
 /*
 ════════════════════════════════════════
@@ -309,7 +311,11 @@ function broadcast(message) {
   if (shuttingDown) return;
 
   for (const [peerId, peer] of peers.entries()) {
+      if (peer.socket && !peer.socket.destroyed) {
     sendFramed(peer.socket, message);
+  } else{
+    log("Socket appears to be destroyed, then message can not be broadcasted")
+  }
   }
 }
 
@@ -557,13 +563,13 @@ function forgeBlock() {
   log(`>> ✅ Bloc #${block.index} forgé et ajouté à la chaîne localement`);
 
   // Diffusion aux peers
-  peers.forEach((peer) =>
-    sendMessage(peer, {
+  for (const [peerId] of peers.entries()) {
+    sendMessage(peerId, {
       type: "NEW_BLOCK",
       from: nodeID,
       block,
-    }),
-  );
+    });
+  }
 }
 // Forge un bloc toutes les 20 secondes
 
@@ -912,6 +918,7 @@ function handleMessage(msg, socket = null) {
         }
 
         log(">> 🟢 Sync incrémental terminé");
+        isSyncing = false;
         //socket.end();
         break;
       }
@@ -942,6 +949,12 @@ function handleMessage(msg, socket = null) {
         // RECALCUL DES SOLDES après synchro
         recalculateBalances();
 
+        const confirmed = new Set();
+        blockchain.forEach((b) => {
+          b.data?.transactions?.forEach((tx) => confirmed.add(tx.id));
+        });
+        mempool = mempool.filter((tx) => !confirmed.has(tx.id));
+
         isSyncing = false;
         log(`>> 🟢 Synchronisation terminée et soldes mis à jour`);
         //socket.end();
@@ -961,13 +974,13 @@ function handleMessage(msg, socket = null) {
           );
 
           // Demande des blocs manquants
-          peers.forEach((peer) =>
-            sendMessage(peer, {
+          for (const [peerId] of peers.entries()) {
+            sendMessage(peerId, {
               type: "GET_BLOCKS_FROM",
               from: nodeID,
               index: last.index,
-            }),
-          );
+            });
+          }
 
           return;
         }
@@ -1066,13 +1079,13 @@ Donc on doit les retirer du mempool local.
         log(`>> 💸 Transaction acceptée (${mempool.length})`);
 
         // 5. Propagation réseau
-        peers.forEach((peer) =>
-          sendMessage(peer, {
+        for (const [peerId] of peers.entries()) {
+          sendMessage(peerId, {
             type: "NEW_TX",
             from: nodeID,
             tx,
-          }),
-        );
+          });
+        }
         //socket.end();
 
         break;
@@ -1098,13 +1111,12 @@ Donc on doit les retirer du mempool local.
       }
     }
   } catch (err) {
-    log("Erreur handleMessage:", err);
-    socket.destroy(); ///////////////////////////////////////////////////////////////
-    
+    log("Erreur handleMessage:", err.message);
+    //socket.destroy(); ///////////////////////////////////////////////////////////////
   } finally {
     if (socket && !socket.destroyed) {
       //socket.end(); ///////////////////////////////////////////////////////////////
-      log("La socket est maintenue, pas de fermeture.")
+      log("La socket est maintenue, pas de fermeture.");
     }
   }
 }
@@ -1120,6 +1132,28 @@ const sockets = new Set();
 function onConnection(socket) {
   sockets.add(socket);
 
+  let buffer = Buffer.alloc(0);
+
+  socket.on("data", (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+
+    while (buffer.length >= 4) {
+      const messageLength = buffer.readUInt32BE(0);
+
+      if (buffer.length < 4 + messageLength) break;
+
+      const messageBuffer = buffer.slice(4, 4 + messageLength);
+      buffer = buffer.slice(4 + messageLength);
+
+      try {
+        const message = JSON.parse(messageBuffer.toString());
+        handleMessage(message, socket);
+      } catch (err) {
+        log("❌ Erreur parsing message serveur: " + err.message);
+      }
+    }
+  });
+
   let peerKey;
 
   if (USE_TLS) {
@@ -1128,7 +1162,6 @@ function onConnection(socket) {
     if (!cert?.subject?.CN) {
       socket.destroy();
       return;
-      
     }
 
     peerKey = cert.subject.CN;
@@ -1140,15 +1173,70 @@ function onConnection(socket) {
     socket,
     host: socket.remoteAddress,
     port: socket.remotePort,
-    lastSeen: Date.now()
+    lastSeen: Date.now(),
   });
 
   socket.on("close", () => {
     peers.delete(peerKey);
     sockets.delete(socket);
+    log(`❌ Peer déconnecté: ${peerKey}`);
   });
 }
 
+function connectToConfiguredPeers() {
+  for (const target of peersConfigList) {
+    let host = target;
+    let port = P2P_PORT;
+
+    if (target.includes(":")) {
+      [host, port] = target.split(":");
+      port = parseInt(port);
+    }
+
+    const socket = net.createConnection({ host, port }, () => {
+      let buffer = Buffer.alloc(0);
+
+      socket.on("data", (chunk) => {
+        buffer = Buffer.concat([buffer, chunk]);
+
+        while (buffer.length >= 4) {
+          const messageLength = buffer.readUInt32BE(0);
+
+          if (buffer.length < 4 + messageLength) break;
+
+          const messageBuffer = buffer.slice(4, 4 + messageLength);
+          buffer = buffer.slice(4 + messageLength);
+
+          try {
+            const message = JSON.parse(messageBuffer.toString());
+            handleMessage(message, socket);
+          } catch (err) {
+            log("❌ Erreur parsing message client: " + err.message);
+          }
+        }
+      });
+      log(`🔌 Connecté à ${host}:${port}`);
+
+      const id = host + ":" + port;
+
+      peers.set(id, {
+        socket,
+        host,
+        port,
+        lastSeen: Date.now(),
+      });
+    });
+
+    socket.on("error", () => {
+      log(`❌ Impossible de connecter ${host}:${port}`);
+    });
+
+    socket.on("close", () => {
+      const id = host + ":" + port;
+      peers.delete(id);
+    });
+  }
+}
 
 function startP2PServer() {
   const tlsOptions = getTLSOptions();
@@ -1217,13 +1305,15 @@ function startNode() {
   if (started) return;
   started = true;
 
+  connectToConfiguredPeers();
+
   // Sync initiale
   syncTimeout = setTimeout(() => {
     log(">> 🔄 Sync au démarrage");
 
-    peers.forEach((peer) =>
-      sendMessage(peer, { type: "GET_CHAIN", from: nodeID }),
-    );
+    for (const [peerId] of peers.entries()) {
+      sendMessage(peerId, { type: "GET_CHAIN", from: nodeID });
+    }
   }, 10000);
 
   // MASTER
@@ -1246,13 +1336,13 @@ function startNode() {
         ? blockchain[blockchain.length - 1].index
         : 0;
 
-      peers.forEach((peer) =>
-        sendMessage(peer, {
+      for (const [peerId] of peers.entries()) {
+        sendMessage(peerId, {
           type: "GET_BLOCKS_FROM",
           from: nodeID,
           index: lastIndex,
-        }),
-      );
+        });
+      }
     }, 20000);
   }
 }
@@ -1433,8 +1523,6 @@ function renderKnownNodes() {
          >
       📋 Copier
       </button>
-      📋 Copier
-      </button>
       <span id="msg-${i}" style="margin-left:6px; color:green;"></span>
    </li>
    `;
@@ -1442,34 +1530,6 @@ function renderKnownNodes() {
      .join("")}
 </ul>
   `;
-}
-
-function notifyPeer(peer, message) {
-  let host = peer;
-  let port = P2P_PORT;
-
-  if (peer.includes(":")) {
-    [host, port] = peer.split(":");
-    port = parseInt(port);
-  }
-
-  const client = net.createConnection({ host, port });
-
-  // ⚡ mini timeout juste pour éviter blocage
-  client.setTimeout(300);
-
-  client.on("connect", () => {
-    sendFramed(client, message);
-   // client.end(); // 👋 terminé direct
-  });
-
-  client.on("timeout", () => {
-    client.destroy(); // abandon immédiat
-  });
-
-  client.on("error", () => {
-    // 🔇 silence total : notification best effort
-  });
 }
 
 function gracefulShutdown() {
@@ -1480,9 +1540,9 @@ function gracefulShutdown() {
 
   // 2. Fermer les sockets actives
   log(`🔌 Fermeture de ${sockets.size} connexions...`);
-  for (const sock of sockets) {
-    sock.end();
-    sock.destroy();
+  for (const [peerId, peer] of peers.entries()) {
+    peer.socket.end();
+    peer.socket.destroy();
   }
 
   // stop timeouts
@@ -1518,9 +1578,9 @@ function gracefulShutdown() {
 }
 
 function broadcastShutdown() {
-  peers.forEach((peer) =>
-    notifyPeer(peer, { type: "NODE_SHUTDOWN", from: nodeID }),
-  );
+  for (const [peerId] of peers.entries()) {
+    sendMessage(peerId, { type: "NODE_SHUTDOWN", from: nodeID });
+  }
 }
 
 app.get("/", (req, res) => {
@@ -1807,18 +1867,22 @@ app.post("/tx", (req, res) => {
   tx.signature = signTransaction(tx, privateKey);
 
   // Ajout au mempool local
+  if (!isTransactionEconomicallyValid(tx, balances)) {
+    log("❌ Solde insuffisant");
+    return res.redirect("/");
+  }
   mempool.push(tx);
 
   logs.push(`💸 TX créée → ${tx.amount} vers ${tx.to.slice(0, 12)}...`);
 
   // Propagation réseau (optionnel tout de suite)
-  peers.forEach((peer) =>
-    sendMessage(peer, {
+  for (const [peerId] of peers.entries()) {
+    sendMessage(peerId, {
       type: "NEW_TX",
       from: nodeID,
       tx,
-    }),
-  );
+    });
+  }
 
   res.redirect("/");
 });
@@ -1866,7 +1930,7 @@ switch (NETWORK_MODE) {
       log(`>> 🌍 Dashboard Web (IP) sur http://<TON_IP>:${WEB_PORT}`);
     });
     ///////////////////////////////////////////////////////////////////////////////////////POUR TESTER
-   // server.on("secureConnection", (socket) => { console.log("Peer cert:", socket.getPeerCertificate());});
+    // server.on("secureConnection", (socket) => { console.log("Peer cert:", socket.getPeerCertificate());});
 
     break;
 
