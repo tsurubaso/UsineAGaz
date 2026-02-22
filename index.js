@@ -311,11 +311,13 @@ function broadcast(message) {
   if (shuttingDown) return;
 
   for (const [peerId, peer] of peers.entries()) {
-      if (peer.socket && !peer.socket.destroyed) {
-    sendFramed(peer.socket, message);
-  } else{
-    log("Socket appears to be destroyed, then message can not be broadcasted")
-  }
+    if (peer.socket && !peer.socket.destroyed) {
+      sendFramed(peer.socket, message);
+    } else {
+      log(
+        "Socket appears to be destroyed, then message can not be broadcasted",
+      );
+    }
   }
 }
 
@@ -1186,54 +1188,80 @@ function onConnection(socket) {
 function connectToConfiguredPeers() {
   for (const target of peersConfigList) {
     let host = target;
-    let port = P2P_PORT;
+    let port = parseInt(P2P_PORT);
 
+    // Format host:port
     if (target.includes(":")) {
-      [host, port] = target.split(":");
-      port = parseInt(port);
+      const [h, p] = target.split(":");
+      host = h;
+      port = parseInt(p);
     }
 
-    const socket = net.createConnection({ host, port }, () => {
-      let buffer = Buffer.alloc(0);
+    const peerId = `${host}:${port}`;
 
-      socket.on("data", (chunk) => {
-        buffer = Buffer.concat([buffer, chunk]);
+    // Évite double connexion
+    if (peers.has(peerId)) {
+      log(`⚠️ Déjà connecté à ${peerId}`);
+      continue;
+    }
 
-        while (buffer.length >= 4) {
-          const messageLength = buffer.readUInt32BE(0);
+    const connectionOptions = { host, port };
 
-          if (buffer.length < 4 + messageLength) break;
+    const socket = USE_TLS
+      ? tls.connect(
+          {
+            ...connectionOptions,
+            ca: fs.readFileSync("./certs/ca.crt"),
+            cert: fs.readFileSync(`./certs/${nodeID}.crt`),
+            key: fs.readFileSync(`./certs/${nodeID}.key`),
+            rejectUnauthorized: true,
+          },
+          onConnect
+        )
+      : net.createConnection(connectionOptions, onConnect);
 
-          const messageBuffer = buffer.slice(4, 4 + messageLength);
-          buffer = buffer.slice(4 + messageLength);
+    function onConnect() {
+      log(`🔌 Connecté ${USE_TLS ? "TLS" : "TCP"} à ${peerId}`);
 
-          try {
-            const message = JSON.parse(messageBuffer.toString());
-            handleMessage(message, socket);
-          } catch (err) {
-            log("❌ Erreur parsing message client: " + err.message);
-          }
-        }
-      });
-      log(`🔌 Connecté à ${host}:${port}`);
-
-      const id = host + ":" + port;
-
-      peers.set(id, {
+      peers.set(peerId, {
         socket,
         host,
         port,
         lastSeen: Date.now(),
       });
+    }
+
+    socket.on("data", (chunk) => {
+      // Réutilise exactement la même logique de framing
+      // que dans onConnection pour rester symétrique
+      let buffer = socket._buffer || Buffer.alloc(0);
+      buffer = Buffer.concat([buffer, chunk]);
+
+      while (buffer.length >= 4) {
+        const messageLength = buffer.readUInt32BE(0);
+        if (buffer.length < 4 + messageLength) break;
+
+        const messageBuffer = buffer.slice(4, 4 + messageLength);
+        buffer = buffer.slice(4 + messageLength);
+
+        try {
+          const message = JSON.parse(messageBuffer.toString());
+          handleMessage(message, socket);
+        } catch (err) {
+          log("❌ Erreur parsing message client: " + err.message);
+        }
+      }
+
+      socket._buffer = buffer;
     });
 
-    socket.on("error", () => {
-      log(`❌ Impossible de connecter ${host}:${port}`);
+    socket.on("error", (err) => {
+      log(`❌ Erreur connexion ${peerId}: ${err.message}`);
     });
 
     socket.on("close", () => {
-      const id = host + ":" + port;
-      peers.delete(id);
+      log(`🔌 Connexion fermée ${peerId}`);
+      peers.delete(peerId);
     });
   }
 }
