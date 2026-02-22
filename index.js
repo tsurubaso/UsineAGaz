@@ -95,20 +95,25 @@ log(`>> WEB_PORT = ${WEB_PORT}`);
 
 const peersConfig = JSON.parse(fs.readFileSync("./peers.json", "utf-8"));
 
-let peersConfigList= [];
-const activePeers = new Map();
-
-// On enlève notre propre adresse IP:PORT pour éviter de se connecter à soi-même et provoquer un feu d'artifice.
+// Peers configurés (statique depuis JSON)
+let peersConfigList = [];
 
 if (NETWORK_MODE === "docker") {
-  peersConfigList= peersConfig.peersDocker.filter((id) => id !== nodeID);
+  peersConfigList = peersConfig.peersDocker.filter((id) => id !== nodeID);
 }
 
 if (NETWORK_MODE === "ip") {
-  peersConfigList= peersConfig.peersIP.filter((addr) => !addr.endsWith(":" + P2P_PORT));
+  peersConfigList = peersConfig.peersIP.filter(
+    (addr) => !addr.endsWith(":" + P2P_PORT)
+  );
 }
 
-log(`>> Peers chargés (${NETWORK_MODE}) : ${JSON.stringify(peersConfigList)}`);
+// Peers actifs (connexions ouvertes)
+const peers = new Map(); 
+// key = peerId ou host:port
+// value = { socket, host, port, lastSeen }
+
+log(`>> Peers chargés (${NETWORK_MODE}) : ${JSON.stringify(peers)}`);
 
 /*
 ════════════════════════════════════════
@@ -302,11 +307,10 @@ function decryptPayload(payloadB64) {
 
 function broadcast(message) {
   if (shuttingDown) return;
-  peers
-    .filter((p) => p !== nodeID)
-    .forEach((peer) => {
-      sendMessage(peer, message);
-    });
+
+  for (const [peerId, peer] of peers.entries()) {
+    sendFramed(peer.socket, message);
+  }
 }
 
 /*
@@ -792,78 +796,25 @@ function sendFramed(socket, obj) {
   socket.write(Buffer.concat([header, body]));
 }
 
-function sendMessage(target, message) {
-  let host = target;
-  let port = P2P_PORT;
+function sendMessage(peerId, message) {
+  const peer = peers.get(peerId);
 
-  // Mode IP : "192.168.0.112:5000"
-  if (target.includes(":")) {
-    [host, port] = target.split(":");
-    port = parseInt(port);
+  if (!peer) {
+    log(`❌ Peer inconnu: ${peerId}`);
+    return;
   }
 
-  log("Sending message to " + target);
-  log("Using port " + port);
+  if (!peer.socket || peer.socket.destroyed) {
+    log(`❌ Socket inactive pour ${peerId}`);
+    return;
+  }
 
-  // ============================
-  // TCP ou TLS selon USE_TLS
-  // ============================
-  //const tlsOptions = getTLSOptions();
-
-  const client = USE_TLS
-    ? tls.connect(
-        {
-          host,
-          port,
-          ca: fs.readFileSync("certs/ca.crt"),
-          cert: fs.readFileSync(`certs/${nodeID}.crt`),
-          key: fs.readFileSync(`certs/${nodeID}.key`),
-          rejectUnauthorized: true,
-        },
-        () => {
-          log(`🔐 TLS connecté → ${host}:${port}`);
-          sendFramed(client, message);
-        },
-      )
-    : net.createConnection({ host, port }, () => {
-        log(`🔌 TCP connecté → ${host}:${port}`);
-        sendFramed(client, message);
-      });
-
-  client.on("error", (err) => {
-    log(`❌ Connection error → ${host}:${port}: ${err.message}`);
-  });
-  // ============================
-  // Réception bufferisée
-  // ============================
-
-  let buffer = Buffer.alloc(0);
-  client.on("data", (chunk) => {
-    buffer = Buffer.concat([buffer, chunk]);
-
-    log(`>> 📤 data traitées pour ${host}:${port}`);
-
-    while (buffer.length >= 4) {
-      const msgLength = buffer.readUInt32BE(0);
-
-      if (buffer.length < 4 + msgLength) break;
-
-      const body = buffer.slice(4, 4 + msgLength);
-      buffer = buffer.slice(4 + msgLength);
-
-      try {
-        const msg = JSON.parse(body.toString());
-        handleMessage(msg);
-      } catch (err) {
-        log("Erreur JSON:", err);
-      }
-      //client.end(); ///A supprimer dans le futur pour permettre les échanges plus longs et persistants, mais pour l'instant on ferme la connexion après réception du message, comme dans l'exemple précédent
-    }
-  });
-
-  client.on("error", (err) => {
-    log(`>> ❌ Erreur TCP vers ${host}:${port} : ${err.message}`);
-  });
+  try {
+    sendFramed(peer.socket, message);
+    log(`📤 Message envoyé → ${peerId}`);
+  } catch (err) {
+    log(`❌ Erreur envoi vers ${peerId}: ${err.message}`);
+  }
 }
 
 function txAlreadyInChain(txid) {
@@ -1165,93 +1116,39 @@ Donc on doit les retirer du mempool local.
 */
 
 const sockets = new Set();
-//const server = net.createServer((socket) => {
-function onConnection(socket) {
-  if (USE_TLS) {
-  const cert = socket.getPeerCertificate();
 
-  if (!cert?.subject?.CN) {
-    console.log("❌ Certificat invalide");
-    socket.destroy();
-    return;
+function onConnection(socket) {
+  sockets.add(socket);
+
+  let peerKey;
+
+  if (USE_TLS) {
+    const cert = socket.getPeerCertificate();
+
+    if (!cert?.subject?.CN) {
+      socket.destroy();
+      return;
+      
+    }
+
+    peerKey = cert.subject.CN;
+  } else {
+    peerKey = socket.remoteAddress + ":" + socket.remotePort;
   }
 
-  const peerId = cert.subject.CN;
-
-  console.log("🔐 Connexion entrante de", peerId);
-
-  peers.set(peerId, {
+  peers.set(peerKey, {
     socket,
+    host: socket.remoteAddress,
+    port: socket.remotePort,
     lastSeen: Date.now()
   });
 
   socket.on("close", () => {
-    console.log("❌ Déconnecté :", peerId);
-    peers.delete(peerId);
+    peers.delete(peerKey);
+    sockets.delete(socket);
   });
 }
-  sockets.add(socket);
 
-  log(`🔌 Nouvelle connexion`);
-  log(`🟢 Connexions actives: ${sockets.size}`);
-  /////////////////////////////////
-  // 📩 Réception de données
-  // ==========================================
-  // ✅ Réception robuste (buffer + while)
-  // ==========================================
-
-  let buffer = Buffer.alloc(0);
-
-  socket.on("data", (chunk) => {
-    // TCP = flux → on accumule
-    buffer = Buffer.concat([buffer, chunk]);
-
-    // Tant qu'on peut extraire un message complet
-    while (buffer.length >= 4) {
-      // Lire longueur
-      const msgLength = buffer.readUInt32BE(0);
-
-      // Message incomplet → attendre chunk suivant
-      if (buffer.length < 4 + msgLength) break;
-
-      // Extraire payload JSON
-      const body = buffer.slice(4, 4 + msgLength);
-
-      // Retirer du buffer
-      buffer = buffer.slice(4 + msgLength);
-
-      // Parser le message complet
-      try {
-        const msg = JSON.parse(body.toString());
-        handleMessage(msg, socket);
-      } catch (err) {
-        log("❌ Message JSON corrompu reçu");
-      }
-    }
-  });
-
-  // 🔒 Gestion de la fermeture de connexion
-  socket.on("close", () => {
-    sockets.delete(socket);
-    log(`❌ Connexion fermée → actives: ${sockets.size}`);
-  });
-
-  // 📴 Fin propre
-  socket.on("end", () => {
-    log("📴 Connexion terminée (end)");
-  });
-
-  socket.on("close", () => {
-    sockets.delete(socket);
-    log("❌ Connexion fermée");
-  });
-
-  // ⚠️ Erreur réseau
-  socket.on("error", (err) => {
-    log(`>> ❌ Erreur de connexion (Socket) : ${err.message}`);
-  });
-}
-//);
 
 function startP2PServer() {
   const tlsOptions = getTLSOptions();
