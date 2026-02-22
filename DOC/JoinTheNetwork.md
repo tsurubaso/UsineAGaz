@@ -1,149 +1,242 @@
 
-# 🌍 BouyaBouya Blockchain — プロジェクト概要（新規参加者向け）
 
-## 1. BouyaBouyaとは？
+# 🔐 TLS 証明書の作成方法（SAN 対応版）
 
-BouyaBouyaは、学習目的で作られた **ミニ分散台帳ネットワーク（ブロックチェーン）** です。
+## 概要
 
-複数のノード（node1, node2, node3…）がネットワーク上で通信しながら、
+Bouya-Bouya は以下の TLS 設計になっています：
 
-* ブロックの同期
-* トランザクションの共有
-* 正当性の検証
-* 安全な通信（TLS）
+* 相互 TLS（mTLS）
+* CA 署名必須
+* `rejectUnauthorized: true`
+* SAN（Subject Alternative Name）必須
+* CN のみの証明書は不可
 
-を体験できるように設計されています。
-
-商用ではなく、分散システムとセキュリティを理解するための教材プロジェクトです。
-
----
-
-## 2. このネットワークでできること
-
-BouyaBouyaネットワークでは、各ノードが次の機能を持ちます：
-
-* P2P通信で他ノードと接続する
-* ブロックチェーンを同期する
-* 新しいブロックを受け取って検証する
-* トランザクションを共有する
-* TLSによって暗号化された安全な通信を行う
+⚠ 現代の TLS（1.2 / 1.3）では **SAN が無い証明書は拒否されます**。
+Common Name（CN）は検証対象になりません。
 
 ---
 
-## 3. ノードの役割
+## ディレクトリ構成
 
-BouyaBouyaでは、ノードは基本的に同じプログラムを動かします。
-
-ただし役割としては次の違いがあります。
-
-### 🟢 Master Node（例：node1）
-
-* 最初にネットワークを立ち上げる中心ノード
-* CA（証明書発行者）として信頼の起点になる
-* 初期ブロック生成やブートストラップを担当する
-
-### 🔵 Follower Node（例：node2, node3…）
-
-* Masterに接続してチェーンを同期する
-* トランザクションを送信・受信する
-* ネットワークに参加して台帳を共有する
+```
+certs/
+ ├── ca.key
+ ├── ca.crt
+ ├── node1.key
+ ├── node1.crt
+ ├── node2.key
+ ├── node2.crt
+```
 
 ---
 
-## 4. 通信の仕組み（TCP / TLS）
+# ① CA の作成（初回のみ）
 
-BouyaBouyaはノード間でTCP通信を行います。
+```bash
+openssl genrsa -out ca.key 4096
 
-さらに、セキュリティ強化のためにTLS対応を導入しています。
-
-### TLSを使うと何が変わる？
-
-* 通信内容が暗号化され盗聴できない
-* 接続相手が正しいノードか確認できる
-* LAN内でも安全なP2Pが可能になる
-
----
-
-## 5. 新しいノードが参加する流れ
-
-新しいノード（node3など）がネットワークに参加するには：
-
-### Step 1：証明書を準備する
-
-BouyaBouyaでは **ミニPKI方式** を採用しています。
-
-* Master NodeがCA（認証局）を持つ
-* 新規ノードはCSR（署名要求）を作る
-* CAが証明書を発行する
+openssl req -x509 -new -nodes \
+  -key ca.key \
+  -sha256 \
+  -days 3650 \
+  -out ca.crt \
+  -subj "/CN=Bouya-CA"
+```
 
 ---
 
-### Step 2：必要なファイルを受け取る
+# ② Node 鍵の生成
 
-新規参加者が最低限必要なのは：
+例：node1
 
-* `ca.crt`（ネットワーク共通の信頼証明書）
-* 自分用の証明書と秘密鍵
-
-  * `node3.crt`
-  * `node3.key`
+```bash
+openssl genrsa -out node1.key 2048
+```
 
 ---
 
-### Step 3：ノードを起動する
+# ③ SAN 用 openssl 設定ファイル作成
 
-各ノードは同じコードを動かします。
+`openssl-node1.cnf` を作成：
 
-環境変数で設定だけ変えます：
+```ini
+[ req ]
+default_bits       = 2048
+prompt             = no
+default_md         = sha256
+req_extensions     = req_ext
+distinguished_name = dn
 
-* Node ID
-* ポート番号
-* Peerアドレス
-* TLSを使うかどうか
+[ dn ]
+CN = node1
 
----
+[ req_ext ]
+subjectAltName = @alt_names
 
-## 6. このプロジェクトのスコープ（重要）
+[ alt_names ]
+DNS.1 = node1
+IP.1  = 192.168.0.157
+```
 
-BouyaBouyaは学習用なので、現時点では次を対象にしています：
+⚠ IP は実際のノードIPに変更してください。
+Docker モードの場合は DNS のみで可：
 
-### ✅ 対象
-
-* LAN内での複数ノード同期
-* TLSによる暗号化通信
-* ブロックとTXの共有
-
-### ❌ 対象外（今はやらない）
-
-* インターネット上での公開運用
-* 大規模スケーリング
-* 完全な匿名ネットワーク
-* マイニング競争
-
----
-
-## 7. 今後の拡張予定
-
-BouyaBouyaは段階的に進化します。
-
-次のステップとして：
-
-* Peer discovery（自動ノード発見）
-* Heartbeat（死活監視）
-* 長期ソケット接続
-* グループチャット型メッセージング
-
-などを予定しています。
+```
+DNS.1 = node1
+```
 
 ---
 
-## ✨ 新規参加者へ
+# ④ CSR 作成（SAN 含む）
 
-BouyaBouyaは「完成品」ではなく、
-分散システムを学びながら育てていくネットワークです。
+```bash
+openssl req -new \
+  -key node1.key \
+  -out node1.csr \
+  -config openssl-node1.cnf
+```
 
-新しいノードが増えるほど面白くなります。
+---
 
-Welcome to the BouyaBouya network 🚀
+# ⑤ CA で署名（SAN を引き継ぐ）
+
+```bash
+openssl x509 -req \
+  -in node1.csr \
+  -CA ca.crt \
+  -CAkey ca.key \
+  -CAcreateserial \
+  -out node1.crt \
+  -days 365 \
+  -sha256 \
+  -extensions req_ext \
+  -extfile openssl-node1.cnf
+```
+
+---
+
+# ⑥ SAN が入っているか確認（必須）
+
+```bash
+openssl x509 -in node1.crt -text -noout
+```
+
+確認ポイント：
+
+```
+X509v3 Subject Alternative Name:
+    DNS:node1, IP Address:192.168.0.157
+```
+
+これが無い場合、TLS handshake は必ず失敗します。
+
+---
+
+# なぜ SAN が必須なのか
+
+現代の TLS 実装では：
+
+* CN は検証対象外
+* SAN のみがホスト検証に使用される
+* SAN が無い証明書は即 reject
+
+Node.js + OpenSSL ではこの失敗は：
+
+```
+ssl/tls alert handshake failure
+```
+
+としか表示されません。
+
+---
+
+# Node.js 側の前提設定
+
+Bouya-Bouya の TLS 設定：
+
+サーバー：
+
+```js
+tls.createServer({
+  key: fs.readFileSync("./certs/node1.key"),
+  cert: fs.readFileSync("./certs/node1.crt"),
+  ca: fs.readFileSync("./certs/ca.crt"),
+  requestCert: true,
+  rejectUnauthorized: true
+})
+```
+
+クライアント：
+
+```js
+tls.connect({
+  host,
+  port,
+  key: fs.readFileSync("./certs/node1.key"),
+  cert: fs.readFileSync("./certs/node1.crt"),
+  ca: fs.readFileSync("./certs/ca.crt"),
+  rejectUnauthorized: true
+})
+```
+
+---
+
+# よくある失敗
+
+### ① SAN が無い
+
+→ 100% handshake failure
+
+### ② key と cert がペアでない
+
+→ bad certificate
+
+### ③ CA が一致していない
+
+→ unknown ca
+
+### ④ IP と SAN が一致していない
+
+→ hostname verification failure
+
+---
+
+# Docker モードの場合
+
+Docker 内通信では通常 IP は不要：
+
+```
+DNS.1 = node1
+DNS.2 = node2
+```
+
+コンテナ名がホスト名になります。
+
+---
+
+# セキュリティ前提
+
+現在の設計では：
+
+* すべてのノードは CA によって管理される
+* 任意ノード参加不可
+* Proof of Authority 前提
+* TLS はノード認証レイヤー
+
+---
+
+# 結論
+
+TLS handshake failure が出る場合、
+ほぼ確実に：
+
+* SAN 不備
+* CA 不一致
+* 証明書ペア不一致
+
+コードではありません。
+
+証明書が正しければ、Bouya-Bouya TLS ネットワークは正常に動作します。
 
 
