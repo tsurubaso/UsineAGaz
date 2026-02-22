@@ -1,165 +1,223 @@
+
+
 🌍 Languages: [English](../README.MD) | [Français](README.fr.md) | [日本語](README.ja.md)
 
-# 🪙 Bouya-Bouya Blockchain 🚀
+# 🪙 Bouya-Bouya Blockchain
 
-### Réseau distribué P2P (Node.js)
+Réseau distribué P2P en Node.js
 
-Bouya-Bouya est une blockchain minimaliste.  
-Elle implémente les concepts fondamentaux d'un registre distribué : signatures **ECDSA**, propagation **P2P**, gestion de **Mempool**, et consensus par **Master-Node**.
+Bouya-Bouya est une blockchain pédagogique mais techniquement structurée.
+Elle implémente un registre distribué complet avec consensus par **preuve d’autorité (PoA)**, synchronisation multi-nœuds, mempool cohérent, chiffrement des communications et dashboard temps réel.
+
+Le projet est conçu pour comprendre concrètement ce qu’implique la construction d’un réseau blockchain bas niveau : TCP brut, framing, cryptographie, propagation d’état et reconstruction de ledger.
 
 ---
 
 # 🚀 Fonctionnalités
 
-- **Réseau Hybride** : Support du mode `Docker` (Dev) et du mode `IP` (réseau local).
-- **Consensus & Forge** :
-- **Master (Node1)** : Responsable de la forge des blocs et de la création monétaire.
-- **Followers (NodeX)** : Validation passive, synchronisation et relais.
+## Consensus – Proof of Authority
 
-- **Sécurité Cryptographique** :
-- Signatures **secp256k1** via `@noble/curves`.
-- Intégrité des blocs par chaînage SHA-256.
+* Un **Master Node** unique responsable de la forge des blocs.
+* Des **Followers** qui valident, synchronisent et relaient.
+* Signature des blocs via **secp256k1**.
+* Vérification systématique du hash et de la signature du bloc.
+* Transactions `MINT` autorisées uniquement pour le Master.
 
-- **Mécanismes de Résilience** :
-- **Polling Périodique** : Les nœuds followers interrogent les pairs toutes les 15 s pour éviter d'être désynchronisés.
-- **Bootstrap Immédiat** : Forgeage d'un "Bloc #1" instantané au démarrage du Master pour injecter la monnaie.
+---
 
-- **Dashboard Interactif** : Interface Web en temps réel pour monitorer la chaîne, le mempool et envoyer des transactions.
+## Synchronisation Avancée
+
+* Synchronisation complète de la chaîne au bootstrap.
+* Synchronisation incrémentale lors de la réception d’un nouveau bloc.
+* Recalcul intégral du ledger après sync.
+* Nettoyage automatique du mempool après inclusion en bloc.
+* Mécanisme de polling périodique pour éviter la dérive d’état.
+
+---
+
+## Sécurité Cryptographique
+
+* Signatures ECDSA via `@noble/curves` (secp256k1).
+* Hash SHA-256 via `@noble/hashes`.
+* Échange de clé **ECDH** entre pairs.
+* Chiffrement symétrique **AES-256-GCM** des messages P2P.
+* Intégrité et authentification des messages réseau.
+
+---
+
+## Réseau P2P Bas Niveau
+
+* Communication TCP native.
+* Framing robuste par **Length-Prefix + Buffer + boucle while**.
+* Reconstruction correcte des messages fragmentés.
+* Gestion propre des connexions et du shutdown.
+* Support Docker (dev) et IP (réseau local).
+
+---
+
+## Dashboard Web
+
+Interface Express temps réel permettant :
+
+* Visualisation des blocs.
+* Inspection du mempool.
+* Affichage des balances.
+* Création et signature de transactions.
+* Monitoring des pairs connectés.
 
 ---
 
 # 🧱 Architecture Technique
 
-### Structure d'un Bloc
+## Structure d’un Bloc
 
-Chaque bloc contient un en-tête cryptographique et un corps de données :
+Chaque bloc contient :
 
-- `index`, `previousHash`, `timestamp`, `hash`
-- `signer` & `signature` (Preuve d'autorité du Master)
-- `data.transactions[]` (Liste des transactions confirmées)
+* `index`
+* `previousHash`
+* `timestamp`
+* `hash`
+* `signer`
+* `signature`
+* `data.transactions[]`
 
-### Le Ledger (Soldes)
-
-Le solde n'est jamais stocké tel quel. Il est **recalculé dynamiquement** à chaque synchronisation ou réception de bloc en "rejouant" l'historique des transactions.
-
----
-
-## 📚 Références pédagogiques
-
-Ce projet s’appuie sur des concepts réseau bas niveau (TCP, bufferisation, framing).
-
-Une mini-repository pédagogique dédiée :
-
-👉 **TCP Message Framing (Length-Prefix + Buffer + while)**  
-https://github.com/tsurubaso/TCPmogi
-
-📖 Documentation :  
-[Lire le README](https://github.com/tsurubaso/TCPmogi/blob/main/README.md)
-
-Cette mini-repo explique pourquoi JSON casse en TCP et comment reconstruire des messages correctement.
-
----
-## 🔐 Secure Network (TLS)
-
-Bouya-Bouya nodes communicate over **encrypted TLS channels**, using a small Certificate Authority (mini-PKI).
-
-If you want to add a new node (Node2, Node3, …) to the network, follow the step-by-step guide here:
-
-➡️ **[Join the Bouya-Bouya TLS Network](JoinTLSNetwork.md)**
+Le hash est calculé sur l’en-tête.
+La signature du Master constitue la preuve d’autorité.
 
 ---
 
-# 🛠 Installation & Configuration
+## Structure d’une Transaction
 
-Tout d'abords Windows [Firewall](FirewallNecessaryAction.fr.md)
+* `from`
+* `to`
+* `amount`
+* `timestamp`
+* `id = SHA256(from + to + amount + timestamp)`
+* `signature` (sauf pour `MINT`)
 
-## 1. Prérequis
+Toute transaction est vérifiée avant entrée en mempool :
+
+* signature valide
+* solde suffisant
+* id cohérent
+
+---
+
+## Ledger
+
+Aucun solde n’est stocké.
+
+Le ledger est **reconstruit dynamiquement** en rejouant l’intégralité de la chaîne :
+
+1. Reset des balances
+2. Parcours des blocs
+3. Application séquentielle des transactions
+
+Ce mécanisme garantit la cohérence inter-nœuds.
+
+---
+
+# 🔐 Réseau Sécurisé (TLS / PKI)
+
+Les nœuds peuvent communiquer via TLS avec mini autorité de certification.
+
+Pour ajouter un nouveau nœud au réseau sécurisé :
+
+➡️ Voir `JoinTLSNetwork.md`
+
+---
+
+# 📚 Référence Pédagogique – TCP Framing
+
+Le projet repose sur un framing TCP robuste.
+
+Mini-repository explicative :
+
+👉 TCP Message Framing (Length-Prefix + Buffer + while)
+[https://github.com/tsurubaso/TCPmogi](https://github.com/tsurubaso/TCPmogi)
+
+Pourquoi JSON casse en TCP ?
+Comment reconstruire correctement les messages fragmentés ?
+Ce repo détaille le mécanisme utilisé ici.
+
+---
+
+# 🛠 Installation
+
+## Prérequis
 
 ```bash
 npm install express dotenv @noble/curves @noble/hashes crypto-js
 ```
 
-Pour la création des wallets.
-
-- utilisez "wallet.js" installez elliptic provisoirement et désinstallez
+Pour la génération des wallets :
 
 ```bash
 npm install elliptic
 ```
 
-## 2. Variables d'Environnement (.env)
+Puis suppression après génération.
 
-### Docker
+---
 
-```bash
-docker compose down
-docker-compose build --no-cache
-docker-compose up
-```
+# ⚙ Configuration
+
+## .env – Mode Docker
 
 ```ini
-NETWORK_MODE=docker #ip ou docker
-
-# Nœud 1 (Admin)
+NETWORK_MODE=docker
 MASTER_ID=node1
+
 node_id1=node1
+NODE1_PRIVATE_KEY=...
+NODE1_PUBLIC_KEY=...
 
-NODE1_PRIVATE_KEY=07d69...
-NODE1_PUBLIC_KEY=04009...
-
-# Nœud 2
 node_id2=node2
-NODE2_PRIVATE_KEY=c6533...
-NODE2_PUBLIC_KEY=04380...
+NODE2_PRIVATE_KEY=...
+NODE2_PUBLIC_KEY=...
 
-# Nœud 3
 node_id3=node3
-NODE3_PRIVATE_KEY=ce05e...
-NODE3_PUBLIC_KEY=04540...
+NODE3_PRIVATE_KEY=...
+NODE3_PUBLIC_KEY=...
 ```
 
-### Node
+---
+
+## .env – Mode IP
 
 ```ini
-NETWORK_MODE=ip #ip ou docker
-
-# Nœud 1 (Admin)
+NETWORK_MODE=ip
 MASTER_ID=node1
 NODE_ID=node1
 
-# Nœud 1 (Admin)
-NODE1_PRIVATE_KEY=07d69...
-NODE1_PUBLIC_KEY=04009...
+NODE1_PRIVATE_KEY=...
+NODE1_PUBLIC_KEY=...
 
-# Nœud 2
-NODE2_PUBLIC_KEY=04380...
-
-# Nœud 3
+NODE2_PUBLIC_KEY=...
 ```
 
-## 3. Fichier des Pairs (peers.json)
+---
 
-Indiquez les adresses IP de vos machines physiques :
-Pour les obtenir "ipconfig"
+## peers.json
 
 ```json
 {
-  "peersIP": ["192.168.0.0:5001", "192.168.0.0:5002"],
-  "peersDocker": ["node1", "node2", "node3", "node4", "node5"]
+  "peersIP": ["192.168.0.10:5001", "192.168.0.11:5002"],
+  "peersDocker": ["node1", "node2", "node3"]
 }
 ```
 
 ---
 
-## ▶️ Utilisation (Mode Local/IP: Node)
+# ▶️ Lancement
 
-Pour lancer le Master (PC 1) :
+Master :
 
 ```powershell
 $env:NODE_ID="node1"; $env:P2P_PORT="5001"; $env:WEB_PORT="3001"; node index.js
 ```
 
-Pour lancer un Follower (PC 2) :
+Follower :
 
 ```powershell
 $env:NODE_ID="node2"; $env:P2P_PORT="5002"; $env:WEB_PORT="3002"; node index.js
@@ -167,20 +225,35 @@ $env:NODE_ID="node2"; $env:P2P_PORT="5002"; $env:WEB_PORT="3002"; node index.js
 
 ---
 
-## 💸 Cycle de vie d'une Transaction
+# 🔁 Cycle de Vie d’une Transaction
 
-1. **Émission** : Création via le Dashboard Web.
-2. **Signature** : Signature locale avec la clé privée de l'émetteur.
-3. **Diffusion** : Propagation `NEW_TX` à tous les nœuds connectés.
-4. **Mempool** : Attente dans la réserve des nœuds (vérification du solde).
-5. **Mining** : Inclusion dans le prochain bloc par le Master (toutes les 20 s).
-6. **Confirmation** : Réception du `NEW_BLOCK`, mise à jour des balances et nettoyage du mempool.
+1. Création via le dashboard.
+2. Signature locale.
+3. Diffusion `NEW_TX`.
+4. Validation et insertion en mempool.
+5. Forge du bloc par le Master (intervalle fixe).
+6. Diffusion `NEW_BLOCK`.
+7. Recalcul du ledger.
+8. Nettoyage du mempool.
+
+---
+
+# 📌 Points Clés
+
+* Seul le Master peut créer des transactions `MINT`.
+* Le réseau est déterministe : tout nœud peut reconstruire l’état complet.
+* La cohérence est garantie par la signature des blocs et la revalidation locale.
+* Le système est conçu pour être lisible, pédagogique et modulaire.
 
 ---
 
-## 📌 À savoir
+Bouya-Bouya n’est pas une blockchain industrielle.
+C’est un laboratoire technique pour comprendre en profondeur :
 
-- **Mint** : Seul le Master peut émettre des transactions `from: "MINT"`.
-- **Identifiant** : L'`id` d'une transaction est calculé par `SHA-256(from + to + amount + timestamp)`.
+* consensus
+* propagation réseau
+* cryptographie appliquée
+* cohérence distribuée
+* résilience P2P
 
----
+Et surtout : ce que signifie réellement « faire une blockchain » en partant du TCP brut.
